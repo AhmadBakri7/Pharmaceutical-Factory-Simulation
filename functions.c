@@ -78,7 +78,7 @@ int peek(Queue* q, void* data) {
     return 0; // success
 }
 
-int isEmpty(Queue* q) {
+bool isEmpty(Queue* q) {
     return q->size == 0;
 }
 
