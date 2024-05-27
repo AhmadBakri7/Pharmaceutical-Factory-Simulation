@@ -41,12 +41,12 @@ typedef struct {
 //     char expire_date[50];
 // } PlasticContainer;
 
-// typedef struct {
-//     int size;
-//     int colorR;
-//     int colorG;
-//     int colorB;
-// } Pill;
+typedef struct {
+    int size;
+    int colorR;
+    int colorG;
+    int colorB;
+} Pill;
 
 typedef struct {
     long message_type; /* the type of message */

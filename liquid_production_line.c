@@ -32,6 +32,8 @@ int liquid_level_defect_rate, color_defect_rate, sealed_defect_rate,
     expire_date_defect_rate, correct_label_defect_rate, label_place_defect_rate;
 
 int message_queue_id;
+time_t start_time;
+float speed = 1.0;
 
 void* inspection(void* data) {
     LiquidMedicine medicine;
@@ -131,6 +133,11 @@ void* packaging(void* data) {
             
             pthread_mutex_lock(&packaged_medicines_mutex);
             enqueue(&packaged_medicines, &package);
+
+            if (getSize(&packaged_medicines) == 1) {
+                start_time = time(NULL);
+            }
+
             pthread_mutex_unlock(&packaged_medicines_mutex);
 
             Message msg;
@@ -145,6 +152,9 @@ void* packaging(void* data) {
         } else {
             pthread_mutex_unlock(&non_defected_medicine_queue_mutex);
         }
+
+        if (start_time != time(NULL))
+            speed = getSize(&packaged_medicines) / (time(NULL) - start_time);
     }
 }
 
