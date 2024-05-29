@@ -349,16 +349,24 @@ int main(int argc, char** argv) {
     pthread_t inspectors[num_inspectors];
     pthread_t packagers[num_packagers];
 
-    int inspectors_ids[num_inspectors];
-    int packagers_ids[num_packagers];
+    int inspectors_numbers[num_inspectors];
+    int packagers_numbers[num_packagers];
 
     // create inspectors
     for (int i = 0; i < num_inspectors; i++)
-        inspectors_ids[i] = pthread_create(&inspectors[i], NULL, inspection, (void*)&i);
+        inspectors_numbers[i] = i;
 
     // create packagers
     for (int i = 0; i < num_packagers; i++)
-        packagers_ids[i] = pthread_create(&packagers[i], NULL, packaging, (void*)&i);
+        packagers_numbers[i] = i;
+
+    // create inspectors
+    for (int i = 0; i < num_inspectors; i++)
+        pthread_create(&inspectors[i], NULL, inspection, (void*) &inspectors_numbers[i]);
+
+    // create packagers
+    for (int i = 0; i < num_packagers; i++)
+        pthread_create(&packagers[i], NULL, packaging, (void*) &packagers_numbers[i]);
 
     // producing medicine
     while(1) {

@@ -14,7 +14,6 @@ PillMedicineSpecs specs[200];
 Pill pill_specs[200];
 
 Queue created_medicine_queue;
-//Queue non_defected_medicine_queue;
 Queue non_defected_medicine_queue[100];
 Queue defected_medicine_queue;
 Queue packaged_medicines;
@@ -136,58 +135,67 @@ void* packaging(void* data) {
 
     int my_number = *((int*) data);
 
+    printf("Hello from: %d\n", my_number);
+
     while (1) {
         pthread_mutex_lock(&non_defected_medicine_queue_mutex);
 
-        bool flag = true;
-        int counter = 0;
-        for(int i = 0; i<num_medicine_types; i++){
-            if (non_defected_medicine_queue[i].size == 0)
-                counter ++;
-        }
-        if (counter == num_medicine_types){
-            flag = false;
+        bool no_medicine_to_package = true, medicine_was_packages = false;
+
+        for (int i = 0; i < num_medicine_types; i++) {
+            if (non_defected_medicine_queue[i].size >= specs[i].num_plastic_containers)
+                no_medicine_to_package = false;
         }
 
-        if (flag==false){
+        if (no_medicine_to_package)
             pthread_cond_wait(&empty_non_defected_queue_cv, &non_defected_medicine_queue_mutex);
-        }
 
-        for (int i = 0; i < num_medicine_types; i++){
-            if (non_defected_medicine_queue[i].size >= specs[i].num_plastic_containers){
-                for(int j=0; j< specs[i].num_plastic_containers; j++){
+        for (int i = 0; i < num_medicine_types; i++) {
+
+            if (non_defected_medicine_queue[i].size >= specs[i].num_plastic_containers) {
+
+                medicine_was_packages = true;
+
+                for (int j = 0; j < specs[i].num_plastic_containers; j++) {
+
                     if (dequeue(&non_defected_medicine_queue[i], &medicine) != -1) {
                         memcpy(&package.containers[j], &medicine, sizeof(medicine));
 
-                        printf("(PACKAGER) %d put medicine of type %d in a package\n", my_number, specs[i].type);
+                        printf("(PACKAGER) %d put medicine [%d] of type %d in a package\n", my_number, medicine.serial_number, specs[i].type);
                         fflush(stdout);
-                            
                     }
                 }
-
-                strcpy(package.prescription, "Please Follow Your Doctor's Instructions");
-                sleep( select_from_range(min_time_for_packaging, max_time_for_packaging) );
-                pthread_mutex_lock(&packaged_medicines_mutex);
-                enqueue(&packaged_medicines, &package);
-                pthread_mutex_unlock(&packaged_medicines_mutex);
-
-                if (getSize(&packaged_medicines) == 1) {
-                    start_time = time(NULL);
-                }
-
-                Message msg;
-                msg.message_type = PRODUCED_PILL_MEDICINE;
-                msg.medicine_type = medicine.type;
-
-                if (msgsnd(message_queue_id, &msg, sizeof(msg), 0) == -1 ) {
-                    perror("Child: msgsend");
-                    pthread_exit( (void*) -1 );
-                }
-            } 
-            if (start_time != time(NULL))
-                speed = getSize(&packaged_medicines) / (time(NULL) - start_time);
-        }          
+                break;
+            }
+        }
         pthread_mutex_unlock(&non_defected_medicine_queue_mutex);
+
+        if (!medicine_was_packages)
+            continue;
+
+        strcpy(package.prescription, "Please Follow Your Doctor's Instructions");
+
+        sleep( select_from_range(min_time_for_packaging, max_time_for_packaging) );
+
+        pthread_mutex_lock(&packaged_medicines_mutex);
+        enqueue(&packaged_medicines, &package);
+        pthread_mutex_unlock(&packaged_medicines_mutex);
+
+        if (getSize(&packaged_medicines) == 1) {
+            start_time = time(NULL);
+        }
+
+        Message msg;
+        msg.message_type = PRODUCED_PILL_MEDICINE;
+        msg.medicine_type = medicine.type;
+
+        if (msgsnd(message_queue_id, &msg, sizeof(msg), 0) == -1 ) {
+            perror("Child: msgsend");
+            pthread_exit( (void*) -1 );
+        }
+        
+        if (start_time != time(NULL))
+            speed = getSize(&packaged_medicines) / (time(NULL) - start_time);
     }
 }
 
@@ -231,7 +239,7 @@ PlasticContainer produce_medicine() {
     int selected_medicine_type = select_from_range(0, num_medicine_types-1);
 
     // select features for the plastic container.
-    created_medicine.type = specs[selected_medicine_type].type;
+    created_medicine.type = selected_medicine_type;
     created_medicine.serial_number = serial_counter;
     serial_counter++;
 
@@ -375,7 +383,8 @@ int main(int argc, char** argv) {
     initQueue(&created_medicine_queue, sizeof(PlasticContainer));
     initQueue(&defected_medicine_queue, sizeof(PlasticContainer));
     initQueue(&packaged_medicines, sizeof(PillPackage));
-    for (int i = 0; i< num_medicine_types; i++){
+
+    for (int i = 0; i < num_medicine_types; i++){
         initQueue(&non_defected_medicine_queue[i], sizeof(PlasticContainer));
     }
 
@@ -383,16 +392,24 @@ int main(int argc, char** argv) {
     pthread_t inspectors[num_inspectors];
     pthread_t packagers[num_packagers];
 
-    int inspectors_ids[num_inspectors];
-    int packagers_ids[num_packagers];
+    int inspectors_numbers[num_inspectors];
+    int packagers_numbers[num_packagers];
 
     // create inspectors
     for (int i = 0; i < num_inspectors; i++)
-        inspectors_ids[i] = pthread_create(&inspectors[i], NULL, inspection, (void*)&i);
+        inspectors_numbers[i] = i;
 
     // create packagers
     for (int i = 0; i < num_packagers; i++)
-        packagers_ids[i] = pthread_create(&packagers[i], NULL, packaging, (void*)&i);
+        packagers_numbers[i] = i;
+
+    // create inspectors
+    for (int i = 0; i < num_inspectors; i++)
+        pthread_create(&inspectors[i], NULL, inspection, (void*) &inspectors_numbers[i]);
+
+    // create packagers
+    for (int i = 0; i < num_packagers; i++)
+        pthread_create(&packagers[i], NULL, packaging, (void*) &packagers_numbers[i]);
 
     // producing medicine
     while(1) {
@@ -424,6 +441,7 @@ int main(int argc, char** argv) {
     freeQueue(&created_medicine_queue);
     freeQueue(&defected_medicine_queue);
     freeQueue(&packaged_medicines);
+
     for (int i = 0; i< num_medicine_types; i++){
         freeQueue(&non_defected_medicine_queue[i]);
     }
