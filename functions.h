@@ -8,8 +8,8 @@ void initQueue(Queue* q, size_t dataSize);
 void enqueue(Queue* q, void* data);
 int dequeue(Queue* q, void* data);
 int peek(Queue* q, void* data);
-int isEmpty(Queue* q);
+bool isEmpty(Queue* q);
+bool ArrayIsEmpty(Queue* q[100], int size);
 void freeQueue(Queue* q);
 int getSize(Queue* q);
-
 #endif

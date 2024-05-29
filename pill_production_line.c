@@ -14,8 +14,8 @@ PillMedicineSpecs specs[200];
 Pill pill_specs[200];
 
 Queue created_medicine_queue;
-Queue non_defected_medicine_queue;
-// Queue non_defected_medicine_queue[100];
+//Queue non_defected_medicine_queue;
+Queue non_defected_medicine_queue[100];
 Queue defected_medicine_queue;
 Queue packaged_medicines;
 
@@ -24,6 +24,9 @@ int min_months_before_expiry;
 
 int max_num_pills_per_container;
 int min_num_pills_per_container;
+
+int max_num_plastic_containers_per_pill_medicine;
+int min_num_plastic_containers_per_pill_medicine;
 
 int max_time_for_inspection;
 int min_time_for_inspection;
@@ -115,15 +118,76 @@ void* inspection(void* data) {
             }
         } else {
             pthread_mutex_lock(&non_defected_medicine_queue_mutex);
-            enqueue(&non_defected_medicine_queue, &medicine);
+            enqueue(&non_defected_medicine_queue[medicine.type], &medicine);
 
-            printf("An (INSPECTOR): %d, put a medicine [%d] in Non Defected\n", my_number, medicine.serial_number);
+            printf("An (INSPECTOR): %d, put a medicine of type %d in Non Defected array\n", my_number, medicine.type);
             fflush(stdout);
 
             pthread_cond_signal(&empty_non_defected_queue_cv);
 
             pthread_mutex_unlock(&non_defected_medicine_queue_mutex);
         }
+    }
+}
+
+void* packaging(void* data) {
+    PlasticContainer medicine;
+    PillPackage package;
+
+    int my_number = *((int*) data);
+
+    while (1) {
+        pthread_mutex_lock(&non_defected_medicine_queue_mutex);
+
+        bool flag = true;
+        int counter = 0;
+        for(int i = 0; i<num_medicine_types; i++){
+            if (non_defected_medicine_queue[i].size == 0)
+                counter ++;
+        }
+        if (counter == num_medicine_types){
+            flag = false;
+        }
+
+        if (flag==false){
+            pthread_cond_wait(&empty_non_defected_queue_cv, &non_defected_medicine_queue_mutex);
+        }
+
+        for (int i = 0; i < num_medicine_types; i++){
+            if (non_defected_medicine_queue[i].size >= specs[i].num_plastic_containers){
+                for(int j=0; j< specs[i].num_plastic_containers; j++){
+                    if (dequeue(&non_defected_medicine_queue[i], &medicine) != -1) {
+                        memcpy(&package.containers[j], &medicine, sizeof(medicine));
+
+                        printf("(PACKAGER) %d put medicine of type %d in a package\n", my_number, specs[i].type);
+                        fflush(stdout);
+                            
+                    }
+                }
+
+                strcpy(package.prescription, "Please Follow Your Doctor's Instructions");
+                sleep( select_from_range(min_time_for_packaging, max_time_for_packaging) );
+                pthread_mutex_lock(&packaged_medicines_mutex);
+                enqueue(&packaged_medicines, &package);
+                pthread_mutex_unlock(&packaged_medicines_mutex);
+
+                if (getSize(&packaged_medicines) == 1) {
+                    start_time = time(NULL);
+                }
+
+                Message msg;
+                msg.message_type = PRODUCED_PILL_MEDICINE;
+                msg.medicine_type = medicine.type;
+
+                if (msgsnd(message_queue_id, &msg, sizeof(msg), 0) == -1 ) {
+                    perror("Child: msgsend");
+                    pthread_exit( (void*) -1 );
+                }
+            } 
+            if (start_time != time(NULL))
+                speed = getSize(&packaged_medicines) / (time(NULL) - start_time);
+        }          
+        pthread_mutex_unlock(&non_defected_medicine_queue_mutex);
     }
 }
 
@@ -139,8 +203,8 @@ void initialize_specs() {
         // set the specs for the plastic containers.
         specs[i].type = i;
         specs[i].num_pills = select_from_range(min_num_pills_per_container, max_num_pills_per_container);
+        specs[i].num_plastic_containers = select_from_range(min_num_plastic_containers_per_pill_medicine,max_num_plastic_containers_per_pill_medicine);
         specs[i].remaining_months_for_expiry = select_from_range(min_months_before_expiry, max_months_before_expiry);
-
         // set the specs for the pills.
         specs[i].pill_colorR = select_from_range(50, 200);
         specs[i].pill_colorG = select_from_range(50, 200);
@@ -148,8 +212,8 @@ void initialize_specs() {
         specs[i].pill_size = select_from_range(2, 10);
 
         printf( /* container specs */
-            "[Type: %d]: num_pills: %d, remaining_months: %d, pill_size: %d, Color(R=%d, G=%d, B=%d)\n",
-            specs[i].type, specs[i].num_pills, specs[i].remaining_months_for_expiry, specs[i].pill_size,
+            "[Type: %d]: num_pills: %d, num_plastic_containers: %d, remaining_months: %d, pill_size: %d, Color(R=%d, G=%d, B=%d)\n",
+            specs[i].type, specs[i].num_pills, specs[i].num_plastic_containers, specs[i].remaining_months_for_expiry, specs[i].pill_size,
             specs[i].pill_colorR, specs[i].pill_colorG, specs[i].pill_colorB
         );
         fflush(stdout);
@@ -263,7 +327,7 @@ PlasticContainer produce_medicine() {
 
 int main(int argc, char** argv) {
 
-    if (argc < 14) {
+    if (argc < 15) {
         perror("Not enough args Pill Production Line");
         exit(-1);
     }
@@ -301,14 +365,19 @@ int main(int argc, char** argv) {
     min_num_pills_per_container = atoi(strtok(argv[13], "-"));
     max_num_pills_per_container = atoi(strtok('\0', "-"));
 
+    min_num_plastic_containers_per_pill_medicine = atoi(strtok(argv[14], "-"));
+    max_num_plastic_containers_per_pill_medicine = atoi(strtok('\0', "-"));
+    
     printf("HEllo world!!!\n");
 
     // initialize specs, and produced medicine queue
     initialize_specs();
     initQueue(&created_medicine_queue, sizeof(PlasticContainer));
-    initQueue(&non_defected_medicine_queue, sizeof(PlasticContainer));
     initQueue(&defected_medicine_queue, sizeof(PlasticContainer));
     initQueue(&packaged_medicines, sizeof(PillPackage));
+    for (int i = 0; i< num_medicine_types; i++){
+        initQueue(&non_defected_medicine_queue[i], sizeof(PlasticContainer));
+    }
 
     // create the threads
     pthread_t inspectors[num_inspectors];
@@ -321,9 +390,9 @@ int main(int argc, char** argv) {
     for (int i = 0; i < num_inspectors; i++)
         inspectors_ids[i] = pthread_create(&inspectors[i], NULL, inspection, (void*)&i);
 
-    // // create packagers
-    // for (int i = 0; i < num_packagers; i++)
-    //     packagers_ids[i] = pthread_create(&packagers[i], NULL, packaging, (void*)&i);
+    // create packagers
+    for (int i = 0; i < num_packagers; i++)
+        packagers_ids[i] = pthread_create(&packagers[i], NULL, packaging, (void*)&i);
 
     // producing medicine
     while(1) {
@@ -349,13 +418,15 @@ int main(int argc, char** argv) {
     for (int i = 0; i < num_inspectors; i++)
         pthread_join(inspectors[i], NULL);  
 
-    // for (int i = 0; i < num_packagers; i++)
-    //     pthread_join(packagers[i], NULL);
+    for (int i = 0; i < num_packagers; i++)
+        pthread_join(packagers[i], NULL);
 
     freeQueue(&created_medicine_queue);
     freeQueue(&defected_medicine_queue);
-    freeQueue(&non_defected_medicine_queue);
     freeQueue(&packaged_medicines);
+    for (int i = 0; i< num_medicine_types; i++){
+        freeQueue(&non_defected_medicine_queue[i]);
+    }
 
     return 0;
 }

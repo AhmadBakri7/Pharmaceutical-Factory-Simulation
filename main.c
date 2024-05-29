@@ -19,6 +19,7 @@ static char TIME_FOR_PACKAGING[20];
 static char MONTHS_BEFORE_EXPIRY[20];
 
 static char NUM_PILLS_PER_CONTAINER[20];
+static char NUM_CONTAINERS_PER_PILL_MEDICINE[20];
 static int PILL_MISSING_DEFECT_RATE;
 static int PILL_COLOR_DEFECT_RATE;
 static int PILL_SIZE_DEFECT_RATE;
@@ -141,7 +142,7 @@ int main(int argc, char** argv) {
                 INSPECTORS_PER_PRODUCTION_LINE, PACKAGERS_PER_PRODUCTION_LINE, med_types,
                 TIME_BETWEEN_EACH_PRODUCTION, MONTHS_BEFORE_EXPIRY, missing_defect, pill_color_defect,
                 pill_size_defect, expire_defect, TIME_FOR_INSPECTION,
-                TIME_FOR_PACKAGING, msg_queue, NUM_PILLS_PER_CONTAINER, NULL
+                TIME_FOR_PACKAGING, msg_queue, NUM_PILLS_PER_CONTAINER, NUM_CONTAINERS_PER_PILL_MEDICINE, NULL
             );
             perror("Exec pill_production_line Failed");
             exit(-1);
@@ -293,9 +294,9 @@ void readFile(char* filename) {
         } else if (strcmp(label, "NUM_PILLS_PER_CONTAINER") == 0){
             strcpy(NUM_PILLS_PER_CONTAINER, str);
         }
-        // /* program end thresholds */
-        // } else if (strcmp(label, "COLLECTORS_MARTYRED_THRESHOLD") == 0){
-        //     COLLECTORS_MARTYRED_THRESHOLD = atoi(str);
+        else if (strcmp(label, "NUM_CONTAINERS_PER_PILL_MEDICINE") == 0){
+            strcpy(NUM_CONTAINERS_PER_PILL_MEDICINE, str);
+        }
         // } else if (strcmp(label, "DISTRIBUTORS_MARTYRED_THRESHOLD") == 0){
         //     DISTRIBUTORS_MARTYRED_THRESHOLD = atoi(str);
         // } else if (strcmp(label, "PLANES_DESTROYED_THRESHOLD") == 0){

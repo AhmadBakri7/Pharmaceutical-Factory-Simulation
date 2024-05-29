@@ -82,6 +82,16 @@ bool isEmpty(Queue* q) {
     return q->size == 0;
 }
 
+bool ArrayIsEmpty(Queue q[100], int size){
+    bool flag = false;
+    for (int i = 0; i< size; i++){
+        if (q[i].size == 0){
+            flag = true;
+        }
+    }
+    return flag;
+}
+
 void freeQueue(Queue* q) {
 
     while (!isEmpty(q)) {
