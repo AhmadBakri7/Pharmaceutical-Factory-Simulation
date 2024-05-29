@@ -17,6 +17,13 @@ static char TIME_BETWEEN_EACH_PRODUCTION[20];
 static char TIME_FOR_INSPECTION[20];
 static char TIME_FOR_PACKAGING[20];
 static char MONTHS_BEFORE_EXPIRY[20];
+
+static char NUM_PILLS_PER_CONTAINER[20];
+static int PILL_MISSING_DEFECT_RATE;
+static int PILL_COLOR_DEFECT_RATE;
+static int PILL_SIZE_DEFECT_RATE;
+static int PILL_EXPIRE_DATE_DEFECT_RATE;
+
 static int LIQUID_MEDICINE_LIQUID_LEVEL_DEFECT_RATE;
 static int LIQUID_MEDICINE_COLOR_DEFECT_RATE;
 static int LIQUID_MEDICINE_SEALED_DEFECT_RATE;
@@ -105,6 +112,38 @@ int main(int argc, char** argv) {
                 TIME_FOR_INSPECTION, TIME_FOR_PACKAGING, msg_queue, NULL
             );
             perror("Exec liquid_production_line Failed");
+            exit(-1);
+        }
+    }
+
+    for (int i = 0; i < PILL_PRODUCTION_LINES; i++) {
+        pills_production_lines[i] = fork();
+
+        if (pills_production_lines[i] == -1) {
+            perror("Forking Error");
+            exit(-1);
+
+        } else if (pills_production_lines[i] == 0) {
+            char med_types[20];
+            char missing_defect[20], expire_defect[20], pill_color_defect[20],
+                 pill_size_defect[20];
+            char msg_queue[20];
+
+            sprintf(med_types, "%d", PILL_MEDICINE_TYPES);
+            sprintf(missing_defect, "%d", PILL_MISSING_DEFECT_RATE);
+            sprintf(expire_defect, "%d", PILL_EXPIRE_DATE_DEFECT_RATE);
+            sprintf(pill_color_defect, "%d", PILL_COLOR_DEFECT_RATE);
+            sprintf(pill_size_defect, "%d", PILL_SIZE_DEFECT_RATE);
+            sprintf(msg_queue, "%d", message_queue_id);
+            
+            execlp(
+                "./pill_production_line", "pill_production_line",
+                INSPECTORS_PER_PRODUCTION_LINE, PACKAGERS_PER_PRODUCTION_LINE, med_types,
+                TIME_BETWEEN_EACH_PRODUCTION, MONTHS_BEFORE_EXPIRY, missing_defect, pill_color_defect,
+                pill_size_defect, expire_defect, TIME_FOR_INSPECTION,
+                TIME_FOR_PACKAGING, msg_queue, NUM_PILLS_PER_CONTAINER, NULL
+            );
+            perror("Exec pill_production_line Failed");
             exit(-1);
         }
     }
@@ -239,15 +278,21 @@ void readFile(char* filename) {
         } else if (strcmp(label, "TIME_LIMIT") == 0){
             TIME_LIMIT = atoi(str);
 
+        } else if (strcmp(label, "PILL_MISSING_DEFECT_RATE") == 0){
+            PILL_MISSING_DEFECT_RATE = atoi(str);
+
+        } else if (strcmp(label, "PILL_COLOR_DEFECT_RATE") == 0){
+            PILL_COLOR_DEFECT_RATE = atoi(str);
+
+        } else if (strcmp(label, "PILL_SIZE_DEFECT_RATE") == 0){
+            PILL_SIZE_DEFECT_RATE = atoi(str);
+
+        } else if (strcmp(label, "PILL_EXPIRE_DATE_DEFECT_RATE") == 0){
+            PILL_EXPIRE_DATE_DEFECT_RATE = atoi(str);
+
+        } else if (strcmp(label, "NUM_PILLS_PER_CONTAINER") == 0){
+            strcpy(NUM_PILLS_PER_CONTAINER, str);
         }
-        //  else if (strcmp(label, "FAMILIES_INCREASE_ALARM") == 0){
-        //     FAMILIES_INCREASE_ALARM = atoi(str);
-
-        // } else if (strcmp(label, "FAMILIES__STARVATION_SURVIVAL_THRESHOLD") == 0){
-        //     FAMILIES__STARVATION_SURVIVAL_THRESHOLD = atoi(str);
-        // } else if (strcmp(label, "SORTER_REQUIRED_STARVE_RATE_DECREASE_PERCENTAGE") == 0){
-        //     SORTER_REQUIRED_STARVE_RATE_DECREASE_PERCENTAGE = atoi(str);
-
         // /* program end thresholds */
         // } else if (strcmp(label, "COLLECTORS_MARTYRED_THRESHOLD") == 0){
         //     COLLECTORS_MARTYRED_THRESHOLD = atoi(str);
@@ -289,8 +334,8 @@ void end_program() {
     for (int i = 0; i < LIQUID_PRODUCTION_LINES; i++)
         kill(liquid_production_lines[i], SIGINT);
 
-    // for (int i = 0; i < PILL_PRODUCTION_LINES; i++)
-    //     kill(pills_production_lines[i], SIGINT);
+    for (int i = 0; i < PILL_PRODUCTION_LINES; i++)
+        kill(pills_production_lines[i], SIGINT);
 
     while ( wait(NULL) > 0 );
 

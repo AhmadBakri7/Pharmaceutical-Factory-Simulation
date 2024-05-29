@@ -7,7 +7,7 @@ LIBS = -lpthread
 OBJ_DIR = obj
 
 # Source files for each process
-PROCESS_SOURCES = main.c liquid_production_line.c
+PROCESS_SOURCES = main.c liquid_production_line.c pill_production_line.c
 
 # Common object file for shared functions
 FUNCTIONS_OBJECT = $(OBJ_DIR)/functions.o

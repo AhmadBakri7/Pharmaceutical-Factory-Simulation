@@ -33,20 +33,38 @@ typedef struct {
     char prescription[50];
 } LiquidPackage;
 
-
-// typedef struct {
-//     int num_pills;
-//     Pill[100];
-//     int label;
-//     char expire_date[50];
-// } PlasticContainer;
-
 typedef struct {
+    int type; /* type of medicine */
     int size;
     int colorR;
     int colorG;
     int colorB;
 } Pill;
+
+typedef struct {
+    int serial_number;
+    int type;
+    int num_pills;
+    Pill pills[100];
+    char production_date[50];
+    char expire_date[50];
+} PlasticContainer;
+
+typedef struct {
+    int type;
+    int pill_size;
+    int pill_colorR;
+    int pill_colorG;
+    int pill_colorB;
+    int num_pills;
+    int remaining_months_for_expiry;
+    int num_plastic_containers;
+} PillMedicineSpecs;
+
+typedef struct {
+    PlasticContainer containers[100];
+    char prescription[50];
+} PillPackage;
 
 typedef struct {
     long message_type; /* the type of message */

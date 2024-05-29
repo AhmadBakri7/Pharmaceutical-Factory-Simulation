@@ -302,7 +302,7 @@ LiquidMedicine produce_medicine() {
 int main(int argc, char** argv) {
 
     if (argc < 15) {
-        perror("Not enough args");
+        perror("Not enough args Liquid");
         exit(-1);
     }
 

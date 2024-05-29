@@ -2,7 +2,7 @@
 
 int select_from_range(int min, int max) {
 
-    if (max < min)
+    if (max <= min)
         return min;
         
     // srand(time(NULL) + getpid());
