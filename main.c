@@ -1,4 +1,5 @@
 #include "headers.h"
+#include "functions.h"
 
 #define DEFAULT_SETTINGS "settings.txt"
 
@@ -36,12 +37,15 @@ static int LIQUID_MEDICINE_OUT_OF_SPEC_THRESHOLD;
 static int PILL_MEDICINE_OUT_OF_SPEC_THRESHOLD;
 static int LIQUID_MEDICINE_TYPE_PRODUCE_THRESHOLD;
 static int PILL_MEDICINE_TYPE_PRODUCE_THRESHOLD;
+static float SPEED_THRESHOLD;
 static int TIME_LIMIT;
 
 pid_t* liquid_production_lines;
 pid_t* pills_production_lines;
 
-int message_queue_id;
+int feedback_queue_id, emp_transfer_queue_id;
+int speed_shmem_id;
+int speed_sem_id;
 
 int main(int argc, char** argv) {
 
@@ -57,11 +61,43 @@ int main(int argc, char** argv) {
     int liquid_medicine_defected_counter = 0, 
         pill_medicine_defected_counter = 0;
 
-    key_t message_queue_key = ftok(".", 'Q');
+    key_t feedback_queue_key = ftok(".", 'Q');
+    key_t emp_transfer_queue_key = ftok(".", 'E');
+    key_t production_line_speed_shmem_key = ftok(".", 'M');
+    key_t production_line_speed_sem_key = ftok(".", 'S');
 
-    if ( (message_queue_id = msgget(message_queue_key, IPC_CREAT | 0770)) == -1 ) {
+    if ( (feedback_queue_id = msgget(feedback_queue_key, IPC_CREAT | 0770)) == -1 ) {
         perror("Queue create");
         exit(1);
+    }
+
+    if ( (emp_transfer_queue_id = msgget(emp_transfer_queue_key, IPC_CREAT | 0770)) == -1 ) {
+        perror("Queue create");
+        exit(1);
+    }
+
+    // create or retrieve the semaphore
+    if ( (speed_sem_id = semget(production_line_speed_sem_key, 1, IPC_CREAT | 0660)) == -1 ) {
+        perror("semget: IPC_CREAT | 0660");
+        end_program();
+    }
+
+    // initialize semaphore
+    union semun speed_su;
+    speed_su.val = 1;
+    if (semctl(speed_sem_id, 0, SETVAL, speed_su) < 0) {
+        perror("semctl");
+        end_program();
+    }
+
+    // Create or retrieve the shared memory segment
+    if ((speed_shmem_id = shmget(
+        production_line_speed_shmem_key,
+        sizeof(MemoryCell) * (LIQUID_PRODUCTION_LINES + PILL_PRODUCTION_LINES),
+        IPC_CREAT | 0666)) < 0)
+    {
+        perror("shmget");
+        end_program();
     }
 
     if ( signal(SIGINT, time_limit) == SIG_ERR ) {
@@ -103,7 +139,7 @@ int main(int argc, char** argv) {
             sprintf(expire_defect, "%d", LIQUID_MEDICINE_EXPIRE_DATE_DEFECT_RATE);
             sprintf(label_defect, "%d", LIQUID_MEDICINE_CORRECT_LABEL_DEFECT_RATE);
             sprintf(label_place_defect, "%d", LIQUID_MEDICINE_LABEL_PLACE_DEFECT_RATE);
-            sprintf(msg_queue, "%d", message_queue_id);
+            sprintf(msg_queue, "%d", feedback_queue_id);
             
             execlp(
                 "./liquid_production_line", "liquid_production_line",
@@ -128,21 +164,25 @@ int main(int argc, char** argv) {
             char med_types[20];
             char missing_defect[20], expire_defect[20], pill_color_defect[20],
                  pill_size_defect[20];
-            char msg_queue[20];
+            char my_number[20], num_prod_lines[20], speed_threshold[20];
 
             sprintf(med_types, "%d", PILL_MEDICINE_TYPES);
             sprintf(missing_defect, "%d", PILL_MISSING_DEFECT_RATE);
             sprintf(expire_defect, "%d", PILL_EXPIRE_DATE_DEFECT_RATE);
             sprintf(pill_color_defect, "%d", PILL_COLOR_DEFECT_RATE);
             sprintf(pill_size_defect, "%d", PILL_SIZE_DEFECT_RATE);
-            sprintf(msg_queue, "%d", message_queue_id);
+
+            sprintf(my_number, "%d", i);
+            sprintf(num_prod_lines, "%d", PILL_PRODUCTION_LINES);
+            sprintf(speed_threshold, "%f", SPEED_THRESHOLD);
             
             execlp(
                 "./pill_production_line", "pill_production_line",
                 INSPECTORS_PER_PRODUCTION_LINE, PACKAGERS_PER_PRODUCTION_LINE, med_types,
                 TIME_BETWEEN_EACH_PRODUCTION, MONTHS_BEFORE_EXPIRY, missing_defect, pill_color_defect,
                 pill_size_defect, expire_defect, TIME_FOR_INSPECTION,
-                TIME_FOR_PACKAGING, msg_queue, NUM_PILLS_PER_CONTAINER, NUM_CONTAINERS_PER_PILL_MEDICINE, NULL
+                TIME_FOR_PACKAGING, NUM_PILLS_PER_CONTAINER, NUM_CONTAINERS_PER_PILL_MEDICINE,
+                my_number, num_prod_lines, speed_threshold, NULL
             );
             perror("Exec pill_production_line Failed");
             exit(-1);
@@ -158,26 +198,32 @@ int main(int argc, char** argv) {
     alarm(TIME_LIMIT);
 
     while (1) {
-        Message message;
+        FeedBackMessage message;
 
-        if ( msgrcv(message_queue_id, &message, sizeof(message), 0, 0) == -1 ) {
+        if ( msgrcv(feedback_queue_id, &message, sizeof(message), 0, 0) == -1 ) {
             perror("msgrcv Parent (News queue)");
             break;
         }
 
         printf("(MAIN) received MSG-Type: %ld, Medicine-Type: %d\n", message.message_type, message.medicine_type);
 
-        if (message.message_type == PRODUCED_LIQUID_MEDICINE) {
+        switch (message.message_type)
+        {
+        case PRODUCED_LIQUID_MEDICINE:
             produced_liquid_medicine_counter[message.medicine_type]++;
-
-        } else if (message.message_type == PRODUCED_PILL_MEDICINE) {
+            break;
+        
+        case PRODUCED_PILL_MEDICINE:
             produced_pill_medicine_counter[message.medicine_type]++;
+            break;
 
-        } else if (message.message_type == DEFECTED_LIQUID_MEDICINE) {
+        case DEFECTED_LIQUID_MEDICINE:
             liquid_medicine_defected_counter++;
+            break;
 
-        } else if (message.message_type == DEFECTED_PILL_MEDICINE) {
+        case DEFECTED_PILL_MEDICINE:
             pill_medicine_defected_counter++;
+            break;
         }
 
         bool stop_program = check_thresholds(
@@ -296,10 +342,11 @@ void readFile(char* filename) {
         }
         else if (strcmp(label, "NUM_CONTAINERS_PER_PILL_MEDICINE") == 0){
             strcpy(NUM_CONTAINERS_PER_PILL_MEDICINE, str);
+
+        } else if (strcmp(label, "SPEED_THRESHOLD") == 0){
+            SPEED_THRESHOLD = atof(str);
         }
-        // } else if (strcmp(label, "DISTRIBUTORS_MARTYRED_THRESHOLD") == 0){
-        //     DISTRIBUTORS_MARTYRED_THRESHOLD = atoi(str);
-        // } else if (strcmp(label, "PLANES_DESTROYED_THRESHOLD") == 0){
+        //  else if (strcmp(label, "PLANES_DESTROYED_THRESHOLD") == 0){
         //     PLANES_DESTROYED_THRESHOLD = atoi(str);
         // } else if (strcmp(label, "PACKAGES_DESTROYED_THRESHOLD") == 0){
         //     PACKAGES_DESTROYED_THRESHOLD = atoi(str);
@@ -340,9 +387,24 @@ void end_program() {
 
     while ( wait(NULL) > 0 );
 
-    if (msgctl(message_queue_id, IPC_RMID, (struct msqid_ds *) 0) == -1) {
+    if (msgctl(feedback_queue_id, IPC_RMID, (struct msqid_ds *) 0) == -1) {
         perror("msgctl");
         exit(EXIT_FAILURE);
+    }
+
+    if (msgctl(emp_transfer_queue_id, IPC_RMID, (struct msqid_ds *) 0) == -1) {
+        perror("msgctl");
+        exit(EXIT_FAILURE);
+    }
+
+    if ( semctl(speed_sem_id, IPC_RMID, 0) == -1 ) {
+        perror("semctl: IPC_RMID");	/* remove semaphore */
+        exit(5);
+    }
+
+    if ( shmctl(speed_shmem_id, IPC_RMID, (struct shmid_ds *) 0) == -1 ) {
+        perror("shmid: IPC_RMID");	/* remove shared memory */
+        exit(5);
     }
 
     free(liquid_production_lines);

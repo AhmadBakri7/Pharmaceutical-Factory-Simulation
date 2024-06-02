@@ -1,10 +1,15 @@
 #include "headers.h"
 #include "functions.h"
 
+MemoryCell* shared_memory;
+
+struct sembuf acquire = {0, -1, SEM_UNDO};
+struct sembuf release = {0, 1, SEM_UNDO};
+
 pthread_mutex_t created_medicine_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t non_defected_medicine_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t defected_medicine_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t packaged_medicines_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t inspection_speed_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t packaging_speed_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_cond_t empty_created_medicine_queue_cv = PTHREAD_COND_INITIALIZER;
 pthread_cond_t empty_non_defected_queue_cv = PTHREAD_COND_INITIALIZER;
@@ -15,8 +20,6 @@ Pill pill_specs[200];
 
 Queue created_medicine_queue;
 Queue non_defected_medicine_queue[100];
-Queue defected_medicine_queue;
-Queue packaged_medicines;
 
 int max_months_before_expiry;
 int min_months_before_expiry;
@@ -37,9 +40,17 @@ int serial_counter = 0;
 
 int missing_pills_defect_rate, pill_color_defect_rate, pill_size_defect_rate, expire_date_defect_rate;
 
-int message_queue_id;
-time_t start_time;
-float speed = 1.0;
+int total_inspected_items = 0,
+    total_packaged_items = 0;
+
+float speed_threshold;
+
+unsigned int total_inspection_time = 0,
+             total_packaging_time = 0;
+
+int feedback_queue_id;
+int emp_transfer_queue_id;
+int speed_sem_id, speed_shmem_id;
 
 void* inspection(void* data) {
     PlasticContainer medicine;
@@ -57,6 +68,7 @@ void* inspection(void* data) {
         
         if (dequeue(&created_medicine_queue, &medicine) == -1) {
             pthread_mutex_unlock(&created_medicine_queue_mutex);
+            // test_cancel...
             continue;
         }
 
@@ -76,7 +88,16 @@ void* inspection(void* data) {
         int printed_year = atoi(strtok(medicine.expire_date, "-"));
         int printed_month = atoi(strtok('\0', "-"));
 
-        sleep( select_from_range(min_time_for_inspection, max_time_for_inspection) );
+        unsigned int inspect_time = select_from_range(min_time_for_inspection, max_time_for_inspection);
+
+        sleep( inspect_time );
+
+        pthread_mutex_lock(&inspection_speed_mutex);
+
+        total_inspected_items++;
+        total_inspection_time += inspect_time;
+
+        pthread_mutex_unlock(&inspection_speed_mutex);
 
         // check each spec
         if (medicine.num_pills != specs[medicine.type].num_pills
@@ -98,20 +119,14 @@ void* inspection(void* data) {
         }
 
         if (defect) {
-            pthread_mutex_lock(&defected_medicine_queue_mutex);
-            enqueue(&defected_medicine_queue, &medicine);
-            // enqueue(&defected_medicine_queue[medicine.type], &medicine);
-
-            printf("An (INSPECTOR): %d, put a medicine [%d] in Trash (%d)\n", my_number, medicine.serial_number, getSize(&defected_medicine_queue));
+            printf("An (INSPECTOR): %d, put a medicine [%d] in Trash\n", my_number, medicine.serial_number);
             fflush(stdout);
 
-            pthread_mutex_unlock(&defected_medicine_queue_mutex);
-
             // send to main.c (parent process) that a medicine is defected, using a message queue.
-            Message msg;
+            FeedBackMessage msg;
             msg.message_type = DEFECTED_PILL_MEDICINE;
 
-            if ( msgsnd(message_queue_id, &msg, sizeof(msg), 0) == -1 ) {
+            if ( msgsnd(feedback_queue_id, &msg, sizeof(msg), 0) == -1 ) {
                 perror("Child: msgsend");
                 pthread_exit( (void*) -1 );
             }
@@ -126,6 +141,7 @@ void* inspection(void* data) {
 
             pthread_mutex_unlock(&non_defected_medicine_queue_mutex);
         }
+        // test_cancel...
     }
 }
 
@@ -134,8 +150,6 @@ void* packaging(void* data) {
     PillPackage package;
 
     int my_number = *((int*) data);
-
-    printf("Hello from: %d\n", my_number);
 
     while (1) {
         pthread_mutex_lock(&non_defected_medicine_queue_mutex);
@@ -175,27 +189,25 @@ void* packaging(void* data) {
 
         strcpy(package.prescription, "Please Follow Your Doctor's Instructions");
 
-        sleep( select_from_range(min_time_for_packaging, max_time_for_packaging) );
+        unsigned int package_time = select_from_range(min_time_for_packaging, max_time_for_packaging);
 
-        pthread_mutex_lock(&packaged_medicines_mutex);
-        enqueue(&packaged_medicines, &package);
-        pthread_mutex_unlock(&packaged_medicines_mutex);
+        sleep( package_time );
 
-        if (getSize(&packaged_medicines) == 1) {
-            start_time = time(NULL);
-        }
+        pthread_mutex_lock(&packaging_speed_mutex);
 
-        Message msg;
+        total_packaged_items += specs[medicine.type].num_pills;
+        total_packaging_time += package_time;
+
+        pthread_mutex_unlock(&packaging_speed_mutex);
+
+        FeedBackMessage msg;
         msg.message_type = PRODUCED_PILL_MEDICINE;
         msg.medicine_type = medicine.type;
 
-        if (msgsnd(message_queue_id, &msg, sizeof(msg), 0) == -1 ) {
+        if ( msgsnd(feedback_queue_id, &msg, sizeof(msg), 0) == -1 ) {
             perror("Child: msgsend");
             pthread_exit( (void*) -1 );
         }
-        
-        if (start_time != time(NULL))
-            speed = getSize(&packaged_medicines) / (time(NULL) - start_time);
     }
 }
 
@@ -213,6 +225,7 @@ void initialize_specs() {
         specs[i].num_pills = select_from_range(min_num_pills_per_container, max_num_pills_per_container);
         specs[i].num_plastic_containers = select_from_range(min_num_plastic_containers_per_pill_medicine,max_num_plastic_containers_per_pill_medicine);
         specs[i].remaining_months_for_expiry = select_from_range(min_months_before_expiry, max_months_before_expiry);
+
         // set the specs for the pills.
         specs[i].pill_colorR = select_from_range(50, 200);
         specs[i].pill_colorG = select_from_range(50, 200);
@@ -230,6 +243,7 @@ void initialize_specs() {
     fflush(stdout);
 }
 
+/* Randomly produce a medicine */
 PlasticContainer produce_medicine() {
     PlasticContainer created_medicine;
     bool flag = false;
@@ -333,9 +347,128 @@ PlasticContainer produce_medicine() {
     return created_medicine;
 }
 
+void write_and_check_speeds(int production_line_number, float speed_threshold, int num_production_lines) {
+
+    pthread_mutex_lock(&inspection_speed_mutex);
+    float my_inspection_speed = (float) (total_inspected_items);
+    pthread_mutex_unlock(&inspection_speed_mutex);
+
+    pthread_mutex_lock(&packaging_speed_mutex);
+    float my_packaging_speed = (float) (total_packaged_items);
+    pthread_mutex_unlock(&packaging_speed_mutex);
+
+    printf("Inspection Speed: %f, Packaging Speed: %f\n", my_inspection_speed, my_packaging_speed);
+    fflush(stdout);
+    
+    /**
+     * acquire semaphore
+     * write the speed of this production_line
+     * check if there is a production_line below threshold
+     * if this line is not the fastest, then don't give any employees
+     * if not, set the flag (under_review) to true.
+     * release semaphore
+     * delete the thread from the array (by swapping)
+     * set the num_inspectors, and num_packagers as needed, (type = production line to receive an employee)
+     * then send the message to the queue.
+    */
+    semaphore_acquire(0, speed_sem_id, &acquire);
+    
+    /* Critical Section */
+    int max_inspection_speed = 0, min_inspection_speed = INT_MAX;
+    int max_packaging_speed = 0, min_packaging_speed = INT_MAX;
+    int index_with_min_inspection_speed = -1, index_with_min_packaging_speed = -1;
+
+    // Write the speed to the shared memory
+    shared_memory[production_line_number].inspection_speed = my_inspection_speed;
+    shared_memory[production_line_number].packaging_speed = my_packaging_speed;
+
+    printf(
+        "My Inspection Speed: %f, My Packaging Speed: %f, Memory Inspection: %f, Memory Packaging: %f\n",
+        my_inspection_speed, my_packaging_speed, shared_memory[production_line_number].inspection_speed,
+        shared_memory[production_line_number].packaging_speed
+    );
+    fflush(stdout);
+
+    // check max and min speeds
+    for (int i = 0; i < num_production_lines; i++) {
+
+        if (i == production_line_number)
+            continue;
+
+        if (shared_memory[i].inspection_speed > max_inspection_speed) {
+            max_inspection_speed = shared_memory[i].inspection_speed;
+
+        } else if (shared_memory[i].inspection_speed < min_inspection_speed) {
+            min_inspection_speed = shared_memory[i].inspection_speed;
+            index_with_min_inspection_speed = i;
+        }
+
+        if (shared_memory[i].packaging_speed > max_packaging_speed) {
+            max_packaging_speed = shared_memory[i].packaging_speed;
+
+        } else if (shared_memory[i].packaging_speed < min_packaging_speed) {
+            min_packaging_speed = shared_memory[i].packaging_speed;
+            index_with_min_packaging_speed = i;
+        }
+    }
+
+    if (min_inspection_speed < speed_threshold && max_inspection_speed == my_inspection_speed) {
+
+        if (index_with_min_inspection_speed != -1) {
+            shared_memory[index_with_min_inspection_speed].inspection_speed += speed_threshold;
+
+            /* Transfer an inspector */
+            EmployeeTransferMessage msg;
+
+            msg.production_line_number = index_with_min_inspection_speed + 1;
+            msg.num_inspectors = 1;
+            msg.num_packagers = 0;
+
+            if ( msgsnd(emp_transfer_queue_id, &msg, sizeof(msg), 0) == -1 ) {
+                perror("Child: msgsend Inspection");
+                semaphore_release(0, speed_sem_id, &release);
+                pthread_exit( (void*) -1 );
+            }
+            printf("(LINE) %d Sending inspector to %d\n", production_line_number, index_with_min_inspection_speed);
+            fflush(stdout);
+        }
+    }
+    if (min_packaging_speed < speed_threshold && max_packaging_speed == my_packaging_speed) {
+
+        if (index_with_min_packaging_speed != -1) {
+            shared_memory[index_with_min_packaging_speed].packaging_speed += speed_threshold;
+
+            /* Transfer a packager */
+            EmployeeTransferMessage msg;
+            
+            msg.production_line_number = index_with_min_packaging_speed + 1;
+            msg.num_inspectors = 0;
+            msg.num_packagers = 1;
+
+            if ( msgsnd(emp_transfer_queue_id, &msg, sizeof(msg), 0) == -1 ) {
+                perror("Child: msgsend Packager");
+                semaphore_release(0, speed_sem_id, &release);
+                pthread_exit( (void*) -1 );
+            }
+            printf("(LINE) %d Sending packager to %d\n", production_line_number, index_with_min_packaging_speed);
+            fflush(stdout);
+        }
+    }
+    /* End of Critical Section */
+    semaphore_release(0, speed_sem_id, &release);
+}
+
+/**
+ * Detach this Process from shared memory, then exit.
+*/
+void end_program() {
+    detach_memory(shared_memory);
+    exit(-1);
+}
+
 int main(int argc, char** argv) {
 
-    if (argc < 15) {
+    if (argc < 17) {
         perror("Not enough args Pill Production Line");
         exit(-1);
     }
@@ -345,6 +478,8 @@ int main(int argc, char** argv) {
 
     int min_packagers = atoi(strtok(argv[2], "-"));
     int max_packagers = atoi(strtok('\0', "-"));
+
+    srand(getpid());
 
     int num_inspectors = select_from_range(min_inspectors, max_inspectors); /* Number of threads */
     int num_packagers = select_from_range(min_packagers, max_packagers);    /* Number of threads */
@@ -368,23 +503,62 @@ int main(int argc, char** argv) {
     min_time_for_packaging = atoi(strtok(argv[11], "-"));
     max_time_for_packaging = atoi(strtok('\0', "-"));
 
-    message_queue_id = atoi(argv[12]);
-
-    min_num_pills_per_container = atoi(strtok(argv[13], "-"));
+    min_num_pills_per_container = atoi(strtok(argv[12], "-"));
     max_num_pills_per_container = atoi(strtok('\0', "-"));
 
-    min_num_plastic_containers_per_pill_medicine = atoi(strtok(argv[14], "-"));
+    min_num_plastic_containers_per_pill_medicine = atoi(strtok(argv[13], "-"));
     max_num_plastic_containers_per_pill_medicine = atoi(strtok('\0', "-"));
+
+    int production_line_number = atoi(argv[14]);
+    int number_of_production_lines = atoi(argv[15]);
+    speed_threshold = atof(argv[16]);
     
-    printf("HEllo world!!!\n");
+    key_t feedback_queue_key = ftok(".", 'Q');
+    key_t emp_transfer_queue_key = ftok(".", 'E');
+    key_t speed_shmem_key = ftok(".", 'M');
+    key_t speed_sem_key = ftok(".", 'S');
+
+    if ( (feedback_queue_id = msgget(feedback_queue_key, IPC_CREAT | 0770)) == -1 ) {
+        perror("Queue create");
+        exit(1);
+    }
+
+    if ( (emp_transfer_queue_id = msgget(emp_transfer_queue_key, IPC_CREAT | 0770)) == -1 ) {
+        perror("Queue create");
+        exit(1);
+    }
+
+    // create or retrieve the semaphore
+    if ( (speed_sem_id = semget(speed_sem_key, 1, IPC_CREAT | 0660)) == -1 ) {
+        perror("semget: IPC_CREAT | 0660");
+        exit(1);
+    }
+
+    // initialize semaphore
+    union semun speed_su;
+    speed_su.val = 1;
+    if (semctl(speed_sem_id, 0, SETVAL, speed_su) < 0) {
+        perror("semctl");
+        exit(1);
+    }
+
+    // Create or retrieve the shared memory segment
+    if ((speed_shmem_id = shmget(speed_shmem_key, 1, IPC_CREAT | 0666)) < 0) {
+        perror("shmget");
+        exit(1);
+    }
+
+    // attach the shared memory
+    if ((shared_memory = shmat(speed_shmem_id, NULL, 0)) == (MemoryCell*) -1) {
+        perror("shmat");
+        exit(1);
+    }
 
     // initialize specs, and produced medicine queue
     initialize_specs();
     initQueue(&created_medicine_queue, sizeof(PlasticContainer));
-    initQueue(&defected_medicine_queue, sizeof(PlasticContainer));
-    initQueue(&packaged_medicines, sizeof(PillPackage));
 
-    for (int i = 0; i < num_medicine_types; i++){
+    for (int i = 0; i < num_medicine_types; i++) {
         initQueue(&non_defected_medicine_queue[i], sizeof(PlasticContainer));
     }
 
@@ -395,11 +569,9 @@ int main(int argc, char** argv) {
     int inspectors_numbers[num_inspectors];
     int packagers_numbers[num_packagers];
 
-    // create inspectors
     for (int i = 0; i < num_inspectors; i++)
         inspectors_numbers[i] = i;
 
-    // create packagers
     for (int i = 0; i < num_packagers; i++)
         packagers_numbers[i] = i;
 
@@ -429,6 +601,20 @@ int main(int argc, char** argv) {
         srand(time(NULL) + getpid());
 
         sleep( select_from_range(min_time_between_each_production, max_time_between_each_production) );
+
+        // read from message queue if there is an employee transferred to this production line
+        EmployeeTransferMessage msg;
+
+        while ( msgrcv(emp_transfer_queue_id, &msg, sizeof(msg), production_line_number+1, IPC_NOWAIT) != -1 ) {
+            // update inspectors and packagers
+            printf("(AUUUGH) Inspectors: %d, Packagers: %d\n", msg.num_inspectors, msg.num_packagers);
+            fflush(stdout);
+        }
+
+        if (errno == ENOMSG) {
+            printf("Hello World\n");
+            write_and_check_speeds(production_line_number, speed_threshold, number_of_production_lines);
+        }
     }
 
     // wait for threads
@@ -439,10 +625,8 @@ int main(int argc, char** argv) {
         pthread_join(packagers[i], NULL);
 
     freeQueue(&created_medicine_queue);
-    freeQueue(&defected_medicine_queue);
-    freeQueue(&packaged_medicines);
 
-    for (int i = 0; i< num_medicine_types; i++){
+    for (int i = 0; i< num_medicine_types; i++) {
         freeQueue(&non_defected_medicine_queue[i]);
     }
 

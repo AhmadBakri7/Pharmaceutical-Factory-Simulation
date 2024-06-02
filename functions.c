@@ -13,6 +13,37 @@ int select_from_range(int min, int max) {
     return random;
 }
 
+void semaphore_acquire(int sem_num, int id, struct sembuf* acquire) {
+
+    acquire->sem_num = sem_num;
+
+    // write the amplitude the shared memory
+    if (semop(id, acquire, 1) == -1) {
+        perror("semop Child");
+        exit(1);
+    }
+}
+
+void semaphore_release(int sem_num, int id, struct sembuf* release) {
+
+    release->sem_num = sem_num;
+
+    // Release the semaphore (unlock)
+    if (semop(id, release, 1) == -1) {
+        perror("semop Release");
+        exit(1);
+    }
+}
+
+void detach_memory(void* shared_memory) {
+
+    // Detach from the shared memory segment
+    if (shmdt(shared_memory) == -1) {
+        perror("shmdt");
+        exit(1);
+    }
+}
+
 void initQueue(Queue* q, size_t dataSize) {
     q->front = q->rear = NULL;
     q->size = 0;

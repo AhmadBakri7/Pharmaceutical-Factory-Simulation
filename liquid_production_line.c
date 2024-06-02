@@ -31,7 +31,7 @@ int serial_counter = 0;
 int liquid_level_defect_rate, color_defect_rate, sealed_defect_rate,
     expire_date_defect_rate, correct_label_defect_rate, label_place_defect_rate;
 
-int message_queue_id;
+int feedback_queue_id;
 time_t start_time;
 float speed = 1.0;
 
@@ -86,10 +86,10 @@ void* inspection(void* data) {
             pthread_mutex_unlock(&defected_medicine_queue_mutex);
 
             // send to main.c (parent process) that a medicine is defected, using a message queue.
-            Message msg;
+            FeedBackMessage msg;
             msg.message_type = DEFECTED_LIQUID_MEDICINE;
 
-            if (msgsnd(message_queue_id, &msg, sizeof(msg), 0) == -1 ) {
+            if (msgsnd(feedback_queue_id, &msg, sizeof(msg), 0) == -1 ) {
                 perror("Child: msgsend");
                 pthread_exit( (void*) -1 );
             }
@@ -140,11 +140,11 @@ void* packaging(void* data) {
 
             pthread_mutex_unlock(&packaged_medicines_mutex);
 
-            Message msg;
+            FeedBackMessage msg;
             msg.message_type = PRODUCED_LIQUID_MEDICINE;
             msg.medicine_type = medicine.type;
 
-            if (msgsnd(message_queue_id, &msg, sizeof(msg), 0) == -1 ) {
+            if (msgsnd(feedback_queue_id, &msg, sizeof(msg), 0) == -1 ) {
                 perror("Child: msgsend");
                 pthread_exit( (void*) -1 );
             }
@@ -336,7 +336,7 @@ int main(int argc, char** argv) {
     min_time_for_packaging = atoi(strtok(argv[13], "-"));
     max_time_for_packaging = atoi(strtok('\0', "-"));
 
-    message_queue_id = atoi(argv[14]);
+    feedback_queue_id = atoi(argv[14]);
 
     // initialize specs, and produced medicine queue
     initialize_specs();

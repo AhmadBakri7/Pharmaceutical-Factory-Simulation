@@ -69,7 +69,19 @@ typedef struct {
 typedef struct {
     long message_type; /* the type of message */
     int medicine_type; /* the type of medicine */
-} Message;
+} FeedBackMessage;
+
+typedef struct {
+    long production_line_number; /* number of production line that will receive employees */
+    int num_inspectors;          /* number of inspectors to be transferred */
+    int num_packagers;           /* number of packagers to be transferred */
+} EmployeeTransferMessage;
+
+typedef struct {
+    int production_num;
+    float inspection_speed;
+    float packaging_speed;
+} MemoryCell;
 
 // Define the node structure
 typedef struct QueueNode {
@@ -83,5 +95,11 @@ typedef struct Queue {
     int size;
     size_t dataSize; // Size of the data type
 } Queue;
+
+union semun {
+    int              val;
+    struct semid_ds *buf;
+    ushort          *array;
+};
 
 #endif
