@@ -172,8 +172,8 @@ int main(int argc, char** argv) {
             sprintf(pill_color_defect, "%d", PILL_COLOR_DEFECT_RATE);
             sprintf(pill_size_defect, "%d", PILL_SIZE_DEFECT_RATE);
 
-            sprintf(my_number, "%d", i);
-            sprintf(num_prod_lines, "%d", PILL_PRODUCTION_LINES);
+            sprintf(my_number, "%d", i + LIQUID_PRODUCTION_LINES);
+            sprintf(num_prod_lines, "%d", PILL_PRODUCTION_LINES + LIQUID_PRODUCTION_LINES);
             sprintf(speed_threshold, "%f", SPEED_THRESHOLD);
             
             execlp(

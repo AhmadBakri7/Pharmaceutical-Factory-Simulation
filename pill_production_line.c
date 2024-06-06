@@ -8,8 +8,8 @@ struct sembuf release = {0, 1, SEM_UNDO};
 
 pthread_mutex_t created_medicine_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t non_defected_medicine_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t inspection_speed_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t packaging_speed_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t inspection_overflow_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t packaging_overflow_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_cond_t empty_created_medicine_queue_cv = PTHREAD_COND_INITIALIZER;
 pthread_cond_t empty_non_defected_queue_cv = PTHREAD_COND_INITIALIZER;
@@ -44,8 +44,10 @@ int serial_counter = 0;
 int missing_pills_defect_rate, pill_color_defect_rate, pill_size_defect_rate, expire_date_defect_rate;
 
 float speed_threshold;
-float my_inspection_speed;
-float my_packaging_speed;
+// float my_inspection_speed;
+// float my_packaging_speed;
+int inspection_overflow = 0;
+int packaging_overflow = 0;
 
 int feedback_queue_id;
 int emp_transfer_queue_id;
@@ -85,6 +87,9 @@ void* inspection(void* data) {
             pthread_testcancel();
             continue;
         }
+        pthread_mutex_lock(&inspection_overflow_mutex);
+        inspection_overflow = getSize(&created_medicine_queue);
+        pthread_mutex_unlock(&inspection_overflow_mutex);
 
         pthread_mutex_unlock(&created_medicine_queue_mutex);
 
@@ -105,13 +110,6 @@ void* inspection(void* data) {
         unsigned int inspect_time = select_from_range(min_time_for_inspection, max_time_for_inspection);
 
         sleep( inspect_time );
-
-        // pthread_mutex_lock(&inspection_speed_mutex);
-
-        // total_inspected_items++;
-        // total_inspection_time += inspect_time;
-
-        // pthread_mutex_unlock(&inspection_speed_mutex);
 
         // check each spec
         if (medicine.num_pills != specs[medicine.type].num_pills
@@ -151,6 +149,15 @@ void* inspection(void* data) {
             printf("An (INSPECTOR): %d, put a medicine of type %d in Non Defected array\n", my_number, medicine.type);
             fflush(stdout);
 
+            pthread_mutex_lock(&packaging_overflow_mutex);
+            int s;
+
+            if ( (s = getSize(&non_defected_medicine_queue[medicine.type])) > specs[medicine.type].num_plastic_containers )
+                packaging_overflow += (s - specs[medicine.type].num_plastic_containers);
+
+            pthread_mutex_unlock(&packaging_overflow_mutex);
+
+            // wake a packager to package a medicine
             pthread_cond_signal(&empty_non_defected_queue_cv);
 
             pthread_mutex_unlock(&non_defected_medicine_queue_mutex);
@@ -167,8 +174,8 @@ void* packaging(void* data) {
 
     int last_state, last_type;
 
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &last_state);   
-    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &last_type);  
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, &last_state);
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, &last_type);
 
     while (1) {
         pthread_mutex_lock(&non_defected_medicine_queue_mutex);
@@ -180,8 +187,12 @@ void* packaging(void* data) {
                 no_medicine_to_package = false;
         }
 
+        pthread_cleanup_push(cleanup_handler, &non_defected_medicine_queue_mutex);
+
         if (no_medicine_to_package)
             pthread_cond_wait(&empty_non_defected_queue_cv, &non_defected_medicine_queue_mutex);
+
+        pthread_cleanup_pop(0);
 
         for (int i = 0; i < num_medicine_types; i++) {
 
@@ -198,6 +209,15 @@ void* packaging(void* data) {
                         fflush(stdout);
                     }
                 }
+                pthread_mutex_lock(&packaging_overflow_mutex);
+
+                if (getSize(&non_defected_medicine_queue[i]) > specs[i].num_plastic_containers)
+                    packaging_overflow -= specs[i].num_plastic_containers;
+                else
+                    packaging_overflow -= getSize(&non_defected_medicine_queue[i]);
+
+                pthread_mutex_unlock(&packaging_overflow_mutex);
+
                 break;
             }
         }
@@ -213,13 +233,6 @@ void* packaging(void* data) {
         unsigned int package_time = select_from_range(min_time_for_packaging, max_time_for_packaging);
 
         sleep( package_time );
-
-        // pthread_mutex_lock(&packaging_speed_mutex);
-
-        // total_packaged_items += specs[medicine.type].num_pills;
-        // total_packaging_time += package_time;
-
-        // pthread_mutex_unlock(&packaging_speed_mutex);
 
         FeedBackMessage msg;
         msg.message_type = PRODUCED_PILL_MEDICINE;
@@ -369,12 +382,13 @@ PlasticContainer produce_medicine() {
     return created_medicine;
 }
 
-void write_speed_to_shmem(int production_line_number) {
+void write_speed_to_shmem(int production_line_number, float my_inspection_speed, float my_packaging_speed) {
+
     shared_memory[production_line_number].inspection_speed = my_inspection_speed;
     shared_memory[production_line_number].packaging_speed = my_packaging_speed;
 
     printf(
-        "(LINE: %d) My Inspection Speed: %f, My Packaging Speed: %f, Memory Inspection: %f, Memory Packaging: %f\n",
+        "(LINE: %d) My Inspection Speed: %.2f, My Packaging Speed: %.2f, Memory Inspection: %.2f, Memory Packaging: %.2f\n",
         production_line_number, my_inspection_speed, my_packaging_speed, shared_memory[production_line_number].inspection_speed,
         shared_memory[production_line_number].packaging_speed
     );
@@ -384,38 +398,23 @@ void write_speed_to_shmem(int production_line_number) {
 void write_and_check_speeds(int production_line_number, float speed_threshold, int num_production_lines,
                             int* num_sent_inspectors, int* num_sent_packagers)
 {
-    // pthread_mutex_lock(&inspection_speed_mutex);
-    // float my_inspection_speed = (float) (total_inspected_items);
-    // pthread_mutex_unlock(&inspection_speed_mutex);
-
-    // pthread_mutex_lock(&non_defected_medicine_queue_mutex);
-    // float my_packaging_speed = (float) ( 1 / (getSize(&non_defected_medicine_queue[0]) + 1e-3) );
-    // pthread_mutex_unlock(&non_defected_medicine_queue_mutex);
-
-    printf("Inspection Speed: %f, Packaging Speed: %f\n", my_inspection_speed, my_packaging_speed);
-    fflush(stdout);
-    
-    /**
-     * acquire semaphore
-     * write the speed of this production_line
-     * check if there is a production_line below threshold
-     * if this line is not the fastest, then don't give any employees
-     * if not, set the flag (under_review) to true.
-     * release semaphore
-     * delete the thread from the array (by swapping)
-     * set the num_inspectors, and num_packagers as needed, (type = production line to receive an employee)
-     * then send the message to the queue.
-    */
-    float max_inspection_speed = 0, min_inspection_speed = 100.0;
-    int max_packaging_speed = 0, min_packaging_speed = INT_MAX;
+    float max_inspection_speed = 0, min_inspection_speed = 1000.0;
+    float max_packaging_speed = 0, min_packaging_speed = 1000.0;
     int index_with_min_inspection_speed = 0, index_with_min_packaging_speed = 0;
 
-    pthread_mutex_lock(&inspection_speed_mutex);
+    pthread_mutex_lock(&inspection_overflow_mutex);
+    float my_inspection_speed = 1. / (inspection_overflow + 1e-3);
+    pthread_mutex_unlock(&inspection_overflow_mutex);
+
+    pthread_mutex_lock(&packaging_overflow_mutex);
+    float my_packaging_speed = 1. / (packaging_overflow + 1e-3);
+    pthread_mutex_unlock(&packaging_overflow_mutex);
+
     semaphore_acquire(0, speed_sem_id, &acquire);
 
     /* Critical Section */
     // Write the speed to the shared memory
-    write_speed_to_shmem(production_line_number);
+    write_speed_to_shmem(production_line_number, my_inspection_speed, my_packaging_speed);
 
     // check max and min speeds
     for (int i = 0; i < num_production_lines; i++) {
@@ -438,14 +437,15 @@ void write_and_check_speeds(int production_line_number, float speed_threshold, i
     }
 
     printf(
-        "(LINE %d): max_inspection speed: %.2f, min_inspection_speed: %.2f, min_index: %d\n",
-        production_line_number, max_inspection_speed, min_inspection_speed, index_with_min_inspection_speed
+        "(LINE %d): max_inspection speed: %.2f, min_inspection_speed: %.2f, min_index: %d, Packaging(max: %.2f,min: %.2f,min_index: %d)\n",
+        production_line_number, max_inspection_speed, min_inspection_speed, index_with_min_inspection_speed,
+        max_packaging_speed, min_packaging_speed, index_with_min_packaging_speed
     );
     fflush(stdout);
 
-    if (min_inspection_speed < speed_threshold && max_inspection_speed == my_inspection_speed) {
+    if (max_inspection_speed == my_inspection_speed && index_with_min_inspection_speed != production_line_number) {
 
-        if (index_with_min_inspection_speed != production_line_number && num_inspectors > 1) {
+        if (min_inspection_speed < speed_threshold && num_inspectors > 1) {
             shared_memory[index_with_min_inspection_speed].inspection_speed += speed_threshold;
 
             /* Transfer an inspector */
@@ -467,32 +467,31 @@ void write_and_check_speeds(int production_line_number, float speed_threshold, i
             }
         }
     }
-    // if (min_packaging_speed < speed_threshold && max_packaging_speed == my_packaging_speed) {
+    if (min_packaging_speed < speed_threshold && max_packaging_speed == my_packaging_speed) {
 
-    //     if (index_with_min_packaging_speed != -1 && num_packagers > 1) {
-    //         shared_memory[index_with_min_packaging_speed].packaging_speed += speed_threshold;
+        if (index_with_min_packaging_speed != -1 && num_packagers > 1) {
+            shared_memory[index_with_min_packaging_speed].packaging_speed += speed_threshold;
 
-    //         /* Transfer a packager */
-    //         EmployeeTransferMessage msg;
+            /* Transfer a packager */
+            EmployeeTransferMessage msg;
             
-    //         msg.production_line_number = index_with_min_packaging_speed + 1;
-    //         msg.num_inspectors = 0;
-    //         msg.num_packagers = 1;
+            msg.production_line_number = index_with_min_packaging_speed + 1;
+            msg.num_inspectors = 0;
+            msg.num_packagers = 1;
 
-    //         *num_sent_packagers = msg.num_packagers;
+            *num_sent_packagers = msg.num_packagers;
 
-    //         printf("(LINE: %d) Sending %d Packagers\n", production_line_number, *num_sent_packagers);
-    //         fflush(stdout);
+            printf("(LINE: %d) Sending %d Packagers\n", production_line_number, *num_sent_packagers);
+            fflush(stdout);
 
-    //         if ( msgsnd(emp_transfer_queue_id, &msg, sizeof(msg), 0) == -1 ) {
-    //             perror("Child: msgsend Packager");
-    //             semaphore_release(0, speed_sem_id, &release);
-    //             pthread_exit( (void*) -1 );
-    //         }
-    //     }
-    // }
+            if ( msgsnd(emp_transfer_queue_id, &msg, sizeof(msg), 0) == -1 ) {
+                perror("Child: msgsend Packager");
+                semaphore_release(0, speed_sem_id, &release);
+                pthread_exit( (void*) -1 );
+            }
+        }
+    }
     /* End of Critical Section */
-    pthread_mutex_unlock(&inspection_speed_mutex);
     semaphore_release(0, speed_sem_id, &release);
 }
 
@@ -502,19 +501,6 @@ void write_and_check_speeds(int production_line_number, float speed_threshold, i
 void end_program() {
     detach_memory(shared_memory);
     exit(-1);
-}
-
-void* temp(void* args) {
-    sleep(5);
-
-    printf("(TEMP) I Woke up\n");
-    fflush(stdout);
-
-    pthread_mutex_lock(&inspection_speed_mutex);
-    my_inspection_speed = 1.5 * ( *(int*) args );
-    pthread_mutex_unlock(&inspection_speed_mutex);
-
-    pthread_exit( (void*) 0 );
 }
 
 int main(int argc, char** argv) {
@@ -585,14 +571,6 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    // initialize semaphore
-    union semun speed_su;
-    speed_su.val = 1;
-    if (semctl(speed_sem_id, 0, SETVAL, speed_su) < 0) {
-        perror("semctl");
-        exit(1);
-    }
-
     // Create or retrieve the shared memory segment
     if ((speed_shmem_id = shmget(speed_shmem_key, 1, IPC_CREAT | 0666)) < 0) {
         perror("shmget");
@@ -634,20 +612,13 @@ int main(int argc, char** argv) {
     for (int i = 0; i < num_packagers; i++)
         pthread_create(&packagers[i], NULL, packaging, (void*) &packagers_numbers[i]);
 
-
-    my_inspection_speed = 3.5;
-    my_packaging_speed = 3.;
-    
+    // initialize the shared memory
     semaphore_acquire(0, speed_sem_id, &acquire);
 
-    // Write the speed to the shared memory
-    shared_memory[production_line_number].inspection_speed = my_inspection_speed;
-    shared_memory[production_line_number].packaging_speed = my_packaging_speed;
+    shared_memory[production_line_number].inspection_speed = speed_threshold;
+    shared_memory[production_line_number].packaging_speed = speed_threshold;
 
     semaphore_release(0, speed_sem_id, &release);
-
-    pthread_t tmp;
-    pthread_create(&tmp, NULL, temp, (void*) &production_line_number);
 
     printf("(LINE: %d)Inspectors: %d, Packagers: %d\n", production_line_number, num_inspectors, num_packagers);
     fflush(stdout);
@@ -663,6 +634,10 @@ int main(int argc, char** argv) {
         printf("---------------------------------\n");
         fflush(stdout);
 
+        pthread_mutex_lock(&inspection_overflow_mutex);
+        inspection_overflow = getSize(&created_medicine_queue);
+        pthread_mutex_unlock(&inspection_overflow_mutex);
+
         pthread_cond_signal(&empty_created_medicine_queue_cv);
 
         pthread_mutex_unlock(&created_medicine_queue_mutex);
@@ -675,8 +650,7 @@ int main(int argc, char** argv) {
         EmployeeTransferMessage msg;
 
         while ( msgrcv(emp_transfer_queue_id, &msg, sizeof(msg), production_line_number+1, IPC_NOWAIT) != -1 ) {
-            // update inspectors and packagers
-            printf("(AUUUGH: %d) Inspectors: %d, Packagers: %d\n", production_line_number, msg.num_inspectors, msg.num_packagers);
+            printf("(MESSAGE: %d) Inspectors: %d, Packagers: %d\n", production_line_number, msg.num_inspectors, msg.num_packagers);
             fflush(stdout);
 
             for (int i = 0; i < msg.num_inspectors; i++) {
@@ -729,7 +703,7 @@ int main(int argc, char** argv) {
 
                 int random_packager = select_from_range(0, num_packagers - 1);
 
-                // pthread_cancel(packagers[random_packager]);
+                pthread_cancel(packagers[random_packager]);
 
                 // delete that thread from memory
                 packagers[random_packager] = packagers[num_inspectors-1];
@@ -750,6 +724,8 @@ int main(int argc, char** argv) {
     for (int i = 0; i< num_medicine_types; i++) {
         freeQueue(&non_defected_medicine_queue[i]);
     }
+
+    end_program();
 
     return 0;
 }
