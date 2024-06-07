@@ -171,14 +171,14 @@ void* packaging(void* data) {
 
         pthread_cleanup_pop(0);
 
-        DrawerMessage drawer_msg;
-        drawer_msg.production_line_number = production_line_number;
-        drawer_msg.operation_type = PACKAGING_START;
-        drawer_msg.medicine_type = LIQUID;
-        drawer_msg.worker_index = my_number;
-        memcpy(&drawer_msg.medicine.liquid_medicine, &medicine, sizeof(medicine));
-
         if (dequeue(&non_defected_medicine_queue, &medicine) != -1) {
+
+            DrawerMessage drawer_msg;
+            drawer_msg.production_line_number = production_line_number;
+            drawer_msg.operation_type = PACKAGING_START;
+            drawer_msg.medicine_type = LIQUID;
+            drawer_msg.worker_index = my_number;
+            memcpy(&drawer_msg.medicine.liquid_medicine, &medicine, sizeof(medicine));
 
             pthread_mutex_unlock(&non_defected_medicine_queue_mutex);
             

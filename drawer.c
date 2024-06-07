@@ -442,6 +442,10 @@ void display() {
         }
     }
 
+    // glColor3f(0, 0, 0);
+    // sprintf(buff, "%d", );
+    // drawText(0.54f - x_offset/1.5, 0.5, buff);
+
     // // the second line for pill 
     // glColor3f(0.0, 0.0, 0.0); // Set color to white
     // drawRectangle(-2.0f, 0.27f, 4.0f, 0.02f);
@@ -581,6 +585,14 @@ int main(int argc, char** argv) {
         }
         num_inspectors[i] = init_msg.num_inspectors;
         num_packagers[i] = init_msg.num_packagers;
+    }
+
+    for (int i = 0; i < num_inspectors[0]; i++) {
+        array_of_positions[0][i+1 ] = -0.8f + ((i*0.3) / 1.5);
+    }
+
+    for (int i = 0; i < num_packagers[0]; i++) {
+        array_of_positions[0][i + num_inspectors[0] + 1 ] = 0.5f - ((0.3*i) / 1.5);
     }
     
 
