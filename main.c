@@ -130,7 +130,7 @@ int main(int argc, char** argv) {
             char liquid_defect[20];
             char color_defect[20], sealed_defect[20], expire_defect[20], label_defect[20],
                  label_place_defect[20];
-            char msg_queue[20];
+            char my_number[20], num_prod_lines[20], speed_threshold[20];
 
             sprintf(med_types, "%d", LIQUID_MEDICINE_TYPES);
             sprintf(liquid_defect, "%d", LIQUID_MEDICINE_LIQUID_LEVEL_DEFECT_RATE);
@@ -139,14 +139,17 @@ int main(int argc, char** argv) {
             sprintf(expire_defect, "%d", LIQUID_MEDICINE_EXPIRE_DATE_DEFECT_RATE);
             sprintf(label_defect, "%d", LIQUID_MEDICINE_CORRECT_LABEL_DEFECT_RATE);
             sprintf(label_place_defect, "%d", LIQUID_MEDICINE_LABEL_PLACE_DEFECT_RATE);
-            sprintf(msg_queue, "%d", feedback_queue_id);
+            sprintf(my_number, "%d", i);
+            sprintf(num_prod_lines, "%d", PILL_PRODUCTION_LINES + LIQUID_PRODUCTION_LINES);
+            sprintf(speed_threshold, "%f", SPEED_THRESHOLD);
             
             execlp(
                 "./liquid_production_line", "liquid_production_line",
                 INSPECTORS_PER_PRODUCTION_LINE, PACKAGERS_PER_PRODUCTION_LINE, med_types, 
                 TIME_BETWEEN_EACH_PRODUCTION, MONTHS_BEFORE_EXPIRY, liquid_defect, color_defect,
                 sealed_defect, expire_defect, label_defect, label_place_defect, 
-                TIME_FOR_INSPECTION, TIME_FOR_PACKAGING, msg_queue, NULL
+                TIME_FOR_INSPECTION, TIME_FOR_PACKAGING, my_number, num_prod_lines,
+                speed_threshold, NULL
             );
             perror("Exec liquid_production_line Failed");
             exit(-1);

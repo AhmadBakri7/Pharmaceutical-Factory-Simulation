@@ -107,9 +107,7 @@ void* inspection(void* data) {
         int printed_year = atoi(strtok(medicine.expire_date, "-"));
         int printed_month = atoi(strtok('\0', "-"));
 
-        unsigned int inspect_time = select_from_range(min_time_for_inspection, max_time_for_inspection);
-
-        sleep( inspect_time );
+        sleep( select_from_range(min_time_for_inspection, max_time_for_inspection) );
 
         // check each spec
         if (medicine.num_pills != specs[medicine.type].num_pills
@@ -279,7 +277,7 @@ void initialize_specs() {
 }
 
 /* Randomly produce a medicine */
-PlasticContainer produce_medicine() {
+PlasticContainer produce_medicine(int production_line_number) {
     PlasticContainer created_medicine;
     bool flag = false;
 
@@ -361,9 +359,9 @@ PlasticContainer produce_medicine() {
     fflush(stdout);
 
     printf(
-        "(PRODUCED) [Serial Number: %d, Type: %d] num_pills: %d, production Date: %s, expire Date: %s\n",
-        created_medicine.serial_number, created_medicine.type, created_medicine.num_pills,
-        created_medicine.production_date, created_medicine.expire_date
+        "(PRODUCED: %d) [Serial Number: %d, Type: %d] num_pills: %d, production Date: %s, expire Date: %s\n",
+        production_line_number, created_medicine.serial_number, created_medicine.type,
+        created_medicine.num_pills,created_medicine.production_date, created_medicine.expire_date
     );
     fflush(stdout);
 
@@ -500,6 +498,11 @@ void write_and_check_speeds(int production_line_number, float speed_threshold, i
 */
 void end_program() {
     detach_memory(shared_memory);
+    freeQueue(&created_medicine_queue);
+
+    for (int i = 0; i< num_medicine_types; i++)
+        freeQueue(&non_defected_medicine_queue[i]);
+    
     exit(-1);
 }
 
@@ -625,7 +628,7 @@ int main(int argc, char** argv) {
 
     // producing medicine
     while(1) {
-        PlasticContainer created_plastic_container = produce_medicine();
+        PlasticContainer created_plastic_container = produce_medicine(production_line_number);
 
         pthread_mutex_lock(&created_medicine_queue_mutex);
 
@@ -718,12 +721,6 @@ int main(int argc, char** argv) {
 
     for (int i = 0; i < num_packagers; i++)
         pthread_join(packagers[i], NULL);
-
-    freeQueue(&created_medicine_queue);
-
-    for (int i = 0; i< num_medicine_types; i++) {
-        freeQueue(&non_defected_medicine_queue[i]);
-    }
 
     end_program();
 
