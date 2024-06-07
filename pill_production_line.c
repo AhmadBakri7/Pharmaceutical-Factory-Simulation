@@ -692,15 +692,13 @@ int main(int argc, char** argv) {
         pthread_exit( (void*) -1 );
     }
 
-    // pause();
-
     // producing medicine
     while(1) {
         PlasticContainer created_plastic_container = produce_medicine();
 
         DrawerMessage drawer_msg;
-        drawer_msg.production_line_number = production_line_number;
         drawer_msg.operation_type = PRODUCTION;
+        drawer_msg.production_line_number = production_line_number;
         drawer_msg.medicine_type = PILL;
         drawer_msg.worker_index = 0;
         memcpy(&drawer_msg.medicine.plastic_container, &created_plastic_container, sizeof(created_plastic_container));
@@ -709,8 +707,6 @@ int main(int argc, char** argv) {
             perror("Child: msgsend Production PILLLLLLS");
             pthread_exit( (void*) -1 );
         }
-        
-    // pause();
 
         pthread_mutex_lock(&created_medicine_queue_mutex);
 

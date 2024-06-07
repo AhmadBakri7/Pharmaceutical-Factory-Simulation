@@ -88,7 +88,7 @@ void drawBottledMedicine(float x, float y, float width, float height,int number)
     sprintf(buff, "%d", number);
     drawText(x + width / 3.0f, y + height / 2.0f + height / 16.0f, buff);
 }
-void drawPlasticContainer(float x, float y, float width, float height, int numPills, float pillSize ) {
+void drawPlasticContainer(float x, float y, float width, float height, int numPills ) {
     // Draw the body of the plastic container
     glColor3f(0.5f, 0.5f, 0.5f); // Set color to gray for the container
     drawRectangle(x, y, width, height);
@@ -96,10 +96,11 @@ void drawPlasticContainer(float x, float y, float width, float height, int numPi
     // Calculate the gap between rows and the size of each pill
     float rowGap = 0.005f;
     float pillGap = 0.005f;
-    pillSize = (height - (numPills/2 + 1) * rowGap) / numPills*2;
+    float pillSize = (height - (numPills/2 + 1) * rowGap) / numPills*2;
 
     // Draw the pills inside the container
     glColor3f(1.0f, 0.0f, 0.0f); // Set color to red for the pills
+
     for (int i = 0; i < numPills; ++i) {
         // Calculate row index and position within the row
         int rowIndex = i / 2;
@@ -288,7 +289,13 @@ void read_from_queue() {
                 liquid_medicine_counter++;
 
             } else {
+                memcpy(&plastic_containers[n][pill_medicine_counter].plastic_container, &msg.medicine.plastic_container, sizeof(PlasticContainer));
+
                 plastic_containers[n][pill_medicine_counter].x = array_of_positions[n][0];
+                plastic_containers[n][pill_medicine_counter].y = array_of_y_positions[n];
+                // plastic_containers[n][pill_medicine_counter].x = 0;
+                // plastic_containers[n][pill_medicine_counter].y = 0;
+                plastic_containers[n][pill_medicine_counter].draw_this = true;
                 pill_medicine_counter++;
             }
             break;
@@ -303,8 +310,8 @@ void read_from_queue() {
 
             } else {
                 int index = find_pill_medicine(n, msg.medicine.plastic_container.serial_number);
-                plastic_containers[n][index].x = array_of_positions[msg.production_line_number][msg.worker_index + 1];
-                plastic_containers[n][index].y = array_of_y_positions[msg.production_line_number];
+                plastic_containers[n][index].x = array_of_positions[n][msg.worker_index + 1];
+                plastic_containers[n][index].y = array_of_y_positions[n];
             }
             break;
 
@@ -317,7 +324,7 @@ void read_from_queue() {
                 liquid_medicine_counter--;
 
             } else {
-                int index = find_pill_medicine(n, msg.medicine.liquid_medicine.serial_number);
+                int index = find_pill_medicine(n, msg.medicine.plastic_container.serial_number);
 
                 free(plastic_containers[n][index].plastic_container.pills); /* Erase the Pills from memory */
 
@@ -334,7 +341,7 @@ void read_from_queue() {
                 liquid_medicines[n][index].draw_this = false;
 
             } else {
-                int index = find_pill_medicine(n, msg.medicine.liquid_medicine.serial_number);
+                int index = find_pill_medicine(n, msg.medicine.plastic_container.serial_number);
                 plastic_containers[n][index].draw_this = false;
             }
             non_defected_counter[msg.production_line_number]++;
@@ -344,14 +351,14 @@ void read_from_queue() {
             if (msg.medicine_type == LIQUID) {
                 int index = find_liquid_medicine(n, msg.medicine.liquid_medicine.serial_number);
                 
-                liquid_medicines[n][index].x = array_of_positions[msg.production_line_number][msg.worker_index + 1 + num_inspectors[msg.production_line_number]];
-                liquid_medicines[n][index].y = array_of_y_positions[msg.production_line_number];
+                liquid_medicines[n][index].x = array_of_positions[n][msg.worker_index + 1 + num_inspectors[n]];
+                liquid_medicines[n][index].y = array_of_y_positions[n];
                 liquid_medicines[n][index].draw_this = true;
 
             } else {
                 int index = find_pill_medicine(n, msg.medicine.plastic_container.serial_number);
-                plastic_containers[n][index].x = array_of_positions[msg.production_line_number][msg.worker_index + 1 + num_inspectors[msg.production_line_number]];
-                plastic_containers[n][index].y = array_of_y_positions[msg.production_line_number];
+                plastic_containers[n][index].x = array_of_positions[n][msg.worker_index + 1 + num_inspectors[n]];
+                plastic_containers[n][index].y = array_of_y_positions[n];
                 plastic_containers[n][index].draw_this = true;
             }
             non_defected_counter[msg.production_line_number]--;
@@ -442,47 +449,55 @@ void display() {
         }
     }
 
-    // glColor3f(0, 0, 0);
-    // sprintf(buff, "%d", );
-    // drawText(0.54f - x_offset/1.5, 0.5, buff);
+    glColor3f(0, 0, 0);
+    sprintf(buff, "Counter: %d", liquid_medicine_counter);
+    drawText(array_of_positions[0][0], 0.6, buff);
 
-    // // the second line for pill 
-    // glColor3f(0.0, 0.0, 0.0); // Set color to white
-    // drawRectangle(-2.0f, 0.27f, 4.0f, 0.02f);
+    // the second line for pill 
+    glColor3f(0.0, 0.0, 0.0); // Set color to white
+    drawRectangle(-2.0f, 0.27f, 4.0f, 0.02f);
 
-    // glColor3f(0.0, 0.0, 0.0); // Set color to white
-    // drawRectangle(-2.0f, 0.02f, 4.0f, 0.02f);
+    glColor3f(0.0, 0.0, 0.0); // Set color to white
+    drawRectangle(-2.0f, 0.02f, 4.0f, 0.02f);
 
-    // drawTrashCan(0.65f, -0.24, 0.15f, 0.2f);
-    // drawPackage(0.83f, -0.24, 0.15f, 0.2f);  // Adjust position and size as needed
+    drawTrashCan(0.65f, -0.24, 0.15f, 0.2f);
+    drawPackage(0.83f, -0.24, 0.15f, 0.2f);  // Adjust position and size as needed
 
-    // // write the trash counter
-    // glColor3f(0, 0, 0);
-    // sprintf(buff, "%d", trash_counter[1]);
-    // drawText(0.65f, -0.24, buff);
+    // write the trash counter
+    glColor3f(0, 0, 0);
+    sprintf(buff, "%d", trash_counter[1]);
+    drawText(0.65f, -0.24, buff);
 
-    // // write the packaged counter
-    // glColor3f(0, 0, 0);
-    // sprintf(buff, "%d", packaged_medicines_counter[1]);
-    // drawText(0.83f, -0.24, buff);
+    // write the packaged counter
+    glColor3f(0, 0, 0);
+    sprintf(buff, "%d", packaged_medicines_counter[1]);
+    drawText(0.83f, -0.24, buff);
 
-    // for (int i = 0; i < num_inspectors[1]; i++) {
-    //     float x_offset = i * 0.3;
-    //     drawWorker(-0.75f + x_offset/1.5, -0.08f, true); // inspectors
+    for (int i = 0; i < num_inspectors[1]; i++) {
+        float x_offset = i * 0.3;
+        drawWorker(-0.75f + x_offset/1.5, -0.08f, true); // inspectors
 
-    //     if (flag){
-    //         array_of_positions[1][i+1] = -0.83f + x_offset/1.5; //the first dimension(1) should be the index of the prod.line
-    //     }
-    // }
-    // for (int i = 0; i < num_packagers[1]; i++) {
-    //     float x_offset = i * 0.3;
-    //     drawWorker(0.55f - x_offset/1.5, -0.08f, false); // packagers
+        glColor3f(0, 0, 0);
+        sprintf(buff, "%d", i);
+        drawText(-0.76f + x_offset/1.5, -0.08f, buff);
 
-    //     if (flag){
-    //         array_of_positions[1][i+1] = 0.47f - x_offset/1.5; //i should be (i+num_of_inspectors)
-    //         array_of_positions[1][0] = -0.99; //production
-    //     }
-    // }
+        if (flag){
+            array_of_positions[1][i+1] = -0.83f + x_offset/1.5; //the first dimension(1) should be the index of the prod.line
+        }
+    }
+    for (int i = 0; i < num_packagers[1]; i++) {
+        float x_offset = i * 0.3;
+        drawWorker(0.55f - x_offset/1.5, -0.08f, false); // packagers
+
+        glColor3f(0, 0, 0);
+        sprintf(buff, "%d", i);
+        drawText(0.54f - x_offset/1.5, -0.08f, buff);
+
+        if (flag){
+            array_of_positions[1][i+1] = 0.47f - x_offset/1.5; //i should be (i+num_of_inspectors)
+            array_of_positions[1][0] = -0.99; //production
+        }
+    }
 
     // // the third line for liquid
     // glColor3f(0.0, 0.0, 0.0); // Set color to white
@@ -537,10 +552,23 @@ void display() {
             drawBottledMedicine(liquid_medicines[0][i].x, liquid_medicines[0][i].y, 0.1f, 0.2f, liquid_medicines[0][i].medicine.serial_number);
     }
 
+    for (int i = 0; i < pill_medicine_counter; i++) {
+        //drawBottledMedicine(-0.8f+0.6/1.5, 0.68f, 0.1f, 0.2f,number);
+
+        if (plastic_containers[0][i].draw_this) {
+
+            drawPlasticContainer(
+                plastic_containers[0][i].x, plastic_containers[0][i].y,
+                0.1f, 0.2f,
+                plastic_containers[0][i].plastic_container.num_pills
+            );
+        }
+
     // for (int i = 0; i < numofplastic; i++) {
     //     float x_offset = i * 0.3; // Calculate the x offset
     //     drawPlasticContainer(0.47f - x_offset/1.5, 0.057f, 0.15f, 0.2f,Number_Of_Pills,pillSize );
     // }
+    }
 
     glutSwapBuffers(); // Swap the front and back buffers
 }
@@ -588,11 +616,19 @@ int main(int argc, char** argv) {
     }
 
     for (int i = 0; i < num_inspectors[0]; i++) {
-        array_of_positions[0][i+1 ] = -0.8f + ((i*0.3) / 1.5);
+        array_of_positions[0][i+1] = -0.8f + ((i*0.3) / 1.5);
     }
 
     for (int i = 0; i < num_packagers[0]; i++) {
         array_of_positions[0][i + num_inspectors[0] + 1 ] = 0.5f - ((0.3*i) / 1.5);
+    }
+
+    for (int i = 0; i < num_inspectors[1]; i++) {
+        array_of_positions[1][i+1] = -0.83f + ((i*0.3) / 1.5);
+    }
+
+    for (int i = 0; i < num_packagers[1]; i++) {
+        array_of_positions[1][i + num_inspectors[1] + 1 ] = 0.47f - ((i * 0.3) / 1.5);
     }
     
 
