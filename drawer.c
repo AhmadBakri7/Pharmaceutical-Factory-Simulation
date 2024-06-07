@@ -293,8 +293,6 @@ void read_from_queue() {
 
                 plastic_containers[n][pill_medicine_counter].x = array_of_positions[n][0];
                 plastic_containers[n][pill_medicine_counter].y = array_of_y_positions[n];
-                // plastic_containers[n][pill_medicine_counter].x = 0;
-                // plastic_containers[n][pill_medicine_counter].y = 0;
                 plastic_containers[n][pill_medicine_counter].draw_this = true;
                 pill_medicine_counter++;
             }
@@ -326,7 +324,7 @@ void read_from_queue() {
             } else {
                 int index = find_pill_medicine(n, msg.medicine.plastic_container.serial_number);
 
-                free(plastic_containers[n][index].plastic_container.pills); /* Erase the Pills from memory */
+                // free(plastic_containers[n][index].plastic_container.pills); /* Erase the Pills from memory */
 
                 memcpy(&plastic_containers[n][index], &plastic_containers[n][pill_medicine_counter-1], sizeof(PlasticContainerGUI));
                 pill_medicine_counter--;
@@ -374,11 +372,27 @@ void read_from_queue() {
             } else {
                 int index = find_pill_medicine(n, msg.medicine.plastic_container.serial_number);
 
-                free(plastic_containers[n][index].plastic_container.pills); /* Erase the Pills from memory */
+                // free(plastic_containers[n][index].plastic_container.pills); /* Erase the Pills from memory */
                 memcpy(&plastic_containers[n][index], &plastic_containers[pill_medicine_counter-1], sizeof(PlasticContainerGUI));
                 pill_medicine_counter--;
             }
             packaged_medicines_counter[msg.production_line_number]++;
+            break;
+
+        case INSPECTOR_CANCELLED:
+            num_inspectors[n]--;
+            break;
+
+        case PACKAGER_CANCELLED:
+            num_packagers[n]--;
+            break;
+
+        case INSPECTOR_RECEIVED:
+            num_inspectors[n]++;
+            break;
+
+        case PACKAGER_RECEIVED:
+            num_packagers[n]++;
             break;
         }
     }
@@ -481,7 +495,7 @@ void display() {
         sprintf(buff, "%d", i);
         drawText(-0.76f + x_offset/1.5, -0.08f, buff);
 
-        if (flag){
+        if (flag) {
             array_of_positions[1][i+1] = -0.83f + x_offset/1.5; //the first dimension(1) should be the index of the prod.line
         }
     }
@@ -496,6 +510,7 @@ void display() {
         if (flag){
             array_of_positions[1][i+1] = 0.47f - x_offset/1.5; //i should be (i+num_of_inspectors)
             array_of_positions[1][0] = -0.99; //production
+            // array_of_y_positions[1] = -0.8; //production
         }
     }
 
@@ -553,14 +568,14 @@ void display() {
     }
 
     for (int i = 0; i < pill_medicine_counter; i++) {
-        //drawBottledMedicine(-0.8f+0.6/1.5, 0.68f, 0.1f, 0.2f,number);
 
-        if (plastic_containers[0][i].draw_this) {
+        if (plastic_containers[1][i].draw_this) {
+            // drawBottledMedicine(-0.8f+0.6/1.5, 0.68f, 0.1f, 0.2f,10);
 
             drawPlasticContainer(
-                plastic_containers[0][i].x, plastic_containers[0][i].y,
+                plastic_containers[1][i].x, plastic_containers[1][i].y,
                 0.1f, 0.2f,
-                plastic_containers[0][i].plastic_container.num_pills
+                plastic_containers[1][i].plastic_container.num_pills
             );
         }
 
@@ -611,8 +626,8 @@ int main(int argc, char** argv) {
             perror("msg error");
             exit(-1);
         }
-        num_inspectors[i] = init_msg.num_inspectors;
-        num_packagers[i] = init_msg.num_packagers;
+        num_inspectors[init_msg.production_line_number] = init_msg.num_inspectors;
+        num_packagers[init_msg.production_line_number] = init_msg.num_packagers;
     }
 
     for (int i = 0; i < num_inspectors[0]; i++) {
@@ -623,13 +638,17 @@ int main(int argc, char** argv) {
         array_of_positions[0][i + num_inspectors[0] + 1 ] = 0.5f - ((0.3*i) / 1.5);
     }
 
+    // pill production line
     for (int i = 0; i < num_inspectors[1]; i++) {
-        array_of_positions[1][i+1] = -0.83f + ((i*0.3) / 1.5);
+        array_of_positions[1][i+1] = -0.80f + ((i*0.3) / 1.5);
     }
 
     for (int i = 0; i < num_packagers[1]; i++) {
-        array_of_positions[1][i + num_inspectors[1] + 1 ] = 0.47f - ((i * 0.3) / 1.5);
+        array_of_positions[1][i + num_inspectors[1] + 1 ] = 0.5f - ((i * 0.3) / 1.5);
     }
+
+    array_of_positions[1][0] = -0.99;
+    array_of_y_positions[1] = 0.06;
     
 
     glutInit(&argc, argv); // Initialize GLUT

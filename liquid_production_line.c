@@ -667,6 +667,15 @@ int main(int argc, char** argv) {
 
                 pthread_create(&new_inspector, NULL, inspection, (void*) &inspectors_numbers[num_inspectors]);
 
+                DrawerMessage drawer_msg;
+                drawer_msg.operation_type = INSPECTOR_RECEIVED;
+                drawer_msg.production_line_number = production_line_number;
+
+                if ( msgsnd(drawer_queue_id, &drawer_msg, sizeof(DrawerMessage), 0) == -1 ) {
+                    perror("Child: msgsend Production Mahmoud");
+                    pthread_exit( (void*) -1 );
+                }
+
                 inspectors[num_inspectors] = new_inspector;
                 num_inspectors++;
             }
@@ -675,6 +684,15 @@ int main(int argc, char** argv) {
                 pthread_t new_packager;
 
                 pthread_create(&new_packager, NULL, packaging, (void*) &packagers_numbers[num_packagers]);
+
+                DrawerMessage drawer_msg;
+                drawer_msg.operation_type = PACKAGER_RECEIVED;
+                drawer_msg.production_line_number = production_line_number;
+
+                if ( msgsnd(drawer_queue_id, &drawer_msg, sizeof(DrawerMessage), 0) == -1 ) {
+                    perror("Child: msgsend Production Mahmoud");
+                    pthread_exit( (void*) -1 );
+                }
 
                 packagers[num_packagers] = new_packager;
                 num_packagers++;
@@ -700,6 +718,16 @@ int main(int argc, char** argv) {
 
                 pthread_cancel(inspectors[random_inspector]);
 
+                DrawerMessage drawer_msg;
+                drawer_msg.operation_type = INSPECTOR_CANCELLED;
+                drawer_msg.production_line_number = production_line_number;
+                drawer_msg.worker_index = random_inspector;
+
+                if ( msgsnd(drawer_queue_id, &drawer_msg, sizeof(DrawerMessage), 0) == -1 ) {
+                    perror("Child: msgsend Production Mahmoud");
+                    pthread_exit( (void*) -1 );
+                }
+
                 // delete that thread from memory
                 inspectors[random_inspector] = inspectors[num_inspectors-1];
                 num_inspectors--;
@@ -713,6 +741,16 @@ int main(int argc, char** argv) {
                 int random_packager = select_from_range(0, num_packagers - 1);
 
                 pthread_cancel(packagers[random_packager]);
+
+                DrawerMessage drawer_msg;
+                drawer_msg.operation_type = PACKAGER_CANCELLED;
+                drawer_msg.production_line_number = production_line_number;
+                drawer_msg.worker_index = random_packager;
+
+                if ( msgsnd(drawer_queue_id, &drawer_msg, sizeof(DrawerMessage), 0) == -1 ) {
+                    perror("Child: msgsend Production Mahmoud");
+                    pthread_exit( (void*) -1 );
+                }
 
                 // delete that thread from memory
                 packagers[random_packager] = packagers[num_inspectors-1];
