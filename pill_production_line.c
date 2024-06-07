@@ -60,6 +60,19 @@ void cleanup_handler(void *arg) {
     pthread_mutex_unlock(mutex);
 }
 
+void swapping_handler(void *arg) {
+    DrawerMessage drawer_msg;
+    drawer_msg.operation_type = INSPECTOR_CANCELLED;
+    drawer_msg.production_line_number = production_line_number;
+    drawer_msg.worker_index = *(int*) arg;
+
+    if ( msgsnd(drawer_queue_id, &drawer_msg, sizeof(drawer_msg), 0) == -1 ) {
+        perror("Child: msgsend Production");
+        pthread_exit( (void*) -1 );
+    }
+}
+
+
 void* inspection(void* data) {
     PlasticContainer medicine;
 

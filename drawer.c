@@ -17,8 +17,6 @@ int num_packagers[100];
 PlasticContainerGUI plastic_containers[100][100];
 LiquidMedicineGUI liquid_medicines[100][100];
 
-float speeds[100];
-
 int produced_medicine_counter[100];
 int liquid_medicine_counter = 0;
 int pill_medicine_counter = 0;
@@ -39,7 +37,7 @@ void drawFilledCircle(float cx, float cy, float r, int num_segments) {
     glBegin(GL_TRIANGLE_FAN);
     glVertex2f(cx, cy); // Center of circle
     for(int i = 0; i <= num_segments; i++) {
-        float theta = 2.0f * 3.1415926f * (float)i / (float)num_segments; // Get the current angle
+        float theta = 2.0f * 3.1415926f * (float)i / (float) num_segments; // Get the current angle
         float x = r * cosf(theta); // Calculate the x component
         float y = r * sinf(theta); // Calculate the y component
         glVertex2f(cx + x, cy + y); // Output vertex
@@ -435,6 +433,7 @@ void display() {
 
     for (int i = 0; i < num_inspectors[0]; i++) {//liquid medicine
         float x_offset = i * 0.3;
+
         drawWorker(-0.75f + x_offset/1.5, 0.55f, true); // inspectors
 
         glColor3f(0, 0, 0);
@@ -448,6 +447,7 @@ void display() {
     }
     for (int i = 0; i < num_packagers[0]; i++) {//liquid medicine
         float x_offset = i * 0.3;
+
         drawWorker(0.55f - x_offset/1.5, 0.55f, false); // packagers
 
         glColor3f(0, 0, 0);
@@ -489,18 +489,20 @@ void display() {
 
     for (int i = 0; i < num_inspectors[1]; i++) {
         float x_offset = i * 0.3;
+
         drawWorker(-0.75f + x_offset/1.5, -0.08f, true); // inspectors
 
         glColor3f(0, 0, 0);
         sprintf(buff, "%d", i);
         drawText(-0.76f + x_offset/1.5, -0.08f, buff);
-
+        
         if (flag) {
             array_of_positions[1][i+1] = -0.83f + x_offset/1.5; //the first dimension(1) should be the index of the prod.line
         }
     }
     for (int i = 0; i < num_packagers[1]; i++) {
         float x_offset = i * 0.3;
+
         drawWorker(0.55f - x_offset/1.5, -0.08f, false); // packagers
 
         glColor3f(0, 0, 0);
@@ -514,49 +516,9 @@ void display() {
         }
     }
 
-    // // the third line for liquid
-    // glColor3f(0.0, 0.0, 0.0); // Set color to white
-    // drawRectangle(-2.0f, -0.63f, 4.0f, 0.02f);
-
-    // // the second line for liquid 
-    // glColor3f(0.0, 0.0, 0.0); // Set color to white
-    // drawRectangle(-2.0f, -0.39f, 4.0f, 0.02f);
-
-    // // for (int i = 0; i < num_of_bottled; i++) {
-    // //     float x_offset = i * (1.0f / (num_of_bottled - 1)); // Calculate the x offset
-    // //     drawBottledMedicine(-0.97f+ x_offset/2.99, -0.6f, 0.1f, 0.2f,number);
-    // // }
-
-    // drawTrashCan(0.65f, -0.88, 0.15f, 0.2f);
-    // drawPackage(0.83f, -0.88, 0.15f, 0.2f);  // Adjust position and size as needed
-    // // write the trash counter
-    // glColor3f(0, 0, 0);
-    // sprintf(buff, "%d", trash_counter[2]);
-    // drawText(0.65f, -0.88, buff);
-
-    // // write the packaged counter
-    // glColor3f(0, 0, 0);
-    // sprintf(buff, "%d", packaged_medicines_counter[2]);
-    // drawText(0.83f, -0.88, buff);
-
-    // for (int i = 0; i < num_inspectors[2]; i++) {//liquid medicine
-    //     float x_offset = i * 0.3;
-    //     drawWorker(-0.75f+x_offset/1.5,-0.73f, true); // inspectors
-
-    //     if (flag) {
-    //         array_of_positions[2][i+1] = -0.8f+x_offset/1.5;//the first dimension(2) should be the index of the prod.line
-    //     }
-    // }
-    // for (int i = 0; i < num_packagers[2]; i++) {//liquid medicine
-    //     float x_offset = i * 0.3;
-    //     drawWorker(0.55f-x_offset/1.5,-0.73f, false); // packagers
-
-    //     if (flag) {
-    //         array_of_positions[2][i+1] = 0.5f-x_offset/1.5;//i should be (i+num_of_inspectors)
-    //         array_of_positions[0][0] = -0.95;//production
-    //         flag = false;
-    //     }
-    // }
+    glColor3f(0, 0, 0);
+    sprintf(buff, "Counter: %d", pill_medicine_counter);
+    drawText(array_of_positions[1][0], -0.03, buff);
 
     read_from_queue();
 
@@ -630,27 +592,26 @@ int main(int argc, char** argv) {
         num_packagers[init_msg.production_line_number] = init_msg.num_packagers;
     }
 
-    for (int i = 0; i < num_inspectors[0]; i++) {
+    for (int i = 0; i < 100; i++) {
         array_of_positions[0][i+1] = -0.8f + ((i*0.3) / 1.5);
     }
 
-    for (int i = 0; i < num_packagers[0]; i++) {
+    for (int i = 0; i < 100; i++) {
         array_of_positions[0][i + num_inspectors[0] + 1 ] = 0.5f - ((0.3*i) / 1.5);
     }
 
     // pill production line
-    for (int i = 0; i < num_inspectors[1]; i++) {
+    for (int i = 0; i < 100; i++) {
         array_of_positions[1][i+1] = -0.80f + ((i*0.3) / 1.5);
     }
 
-    for (int i = 0; i < num_packagers[1]; i++) {
+    for (int i = 0; i < 100; i++) {
         array_of_positions[1][i + num_inspectors[1] + 1 ] = 0.5f - ((i * 0.3) / 1.5);
     }
 
     array_of_positions[1][0] = -0.99;
     array_of_y_positions[1] = 0.06;
     
-
     glutInit(&argc, argv); // Initialize GLUT
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH); // Enable double buffering, RGB colors, and depth buffer
     glutInitWindowSize(1500, 980); // Set the window size
