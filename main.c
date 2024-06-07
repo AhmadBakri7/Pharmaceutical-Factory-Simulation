@@ -42,8 +42,9 @@ static int TIME_LIMIT;
 
 pid_t* liquid_production_lines;
 pid_t* pills_production_lines;
+pid_t drawer_process;
 
-int feedback_queue_id, emp_transfer_queue_id;
+int feedback_queue_id, emp_transfer_queue_id, drawer_queue_id;
 int speed_shmem_id;
 int speed_sem_id;
 
@@ -62,6 +63,7 @@ int main(int argc, char** argv) {
         pill_medicine_defected_counter = 0;
 
     key_t feedback_queue_key = ftok(".", 'Q');
+    key_t drawer_queue_key = ftok(".", 'D');
     key_t emp_transfer_queue_key = ftok(".", 'E');
     key_t production_line_speed_shmem_key = ftok(".", 'M');
     key_t production_line_speed_sem_key = ftok(".", 'S');
@@ -72,6 +74,11 @@ int main(int argc, char** argv) {
     }
 
     if ( (emp_transfer_queue_id = msgget(emp_transfer_queue_key, IPC_CREAT | 0770)) == -1 ) {
+        perror("Queue create");
+        exit(1);
+    }
+    
+    if ( (drawer_queue_id = msgget(drawer_queue_key, IPC_CREAT | 0770)) == -1 ) {
         perror("Queue create");
         exit(1);
     }
@@ -190,6 +197,19 @@ int main(int argc, char** argv) {
             perror("Exec pill_production_line Failed");
             exit(-1);
         }
+    }
+
+    drawer_process = fork();
+
+    if (drawer_process == 0) {
+        char num_liquid_lines[20], num_pill_lines[20];
+
+        sprintf(num_liquid_lines, "%d", LIQUID_PRODUCTION_LINES);
+        sprintf(num_pill_lines, "%d", PILL_PRODUCTION_LINES);
+
+        execlp("./drawer", "drawer", num_liquid_lines, num_pill_lines, NULL);
+        perror("Exec Drawer Failed");
+        exit(-1);
     }
 
     for (int i = 0; i < LIQUID_MEDICINE_TYPES; i++)
@@ -388,6 +408,8 @@ void end_program() {
     for (int i = 0; i < PILL_PRODUCTION_LINES; i++)
         kill(pills_production_lines[i], SIGINT);
 
+    kill(drawer_process, SIGINT);
+
     while ( wait(NULL) > 0 );
 
     if (msgctl(feedback_queue_id, IPC_RMID, (struct msqid_ds *) 0) == -1) {
@@ -396,6 +418,11 @@ void end_program() {
     }
 
     if (msgctl(emp_transfer_queue_id, IPC_RMID, (struct msqid_ds *) 0) == -1) {
+        perror("msgctl");
+        exit(EXIT_FAILURE);
+    }
+
+    if (msgctl(drawer_queue_id, IPC_RMID, (struct msqid_ds *) 0) == -1) {
         perror("msgctl");
         exit(EXIT_FAILURE);
     }

@@ -4,6 +4,12 @@
 #define MAX_THREADS 50
 
 enum OPERATION_TYPE {PRODUCED_LIQUID_MEDICINE = 1, PRODUCED_PILL_MEDICINE, DEFECTED_LIQUID_MEDICINE, DEFECTED_PILL_MEDICINE};
+enum MEDICINE_TYPE {LIQUID = 1, PILL};
+
+enum DRAWER_OPERATION_TYPES {
+    INITIAL = 1, PRODUCTION, INSPECTION_START, INSPECTION_SUCCESSFUL, INSPECTION_FAILED, PACKAGING_START, PACKAGING_END,
+    INSPECTOR_CANCELLED, PACKAGER_CANCELLED
+};
 
 typedef struct {
     int serial_number;
@@ -47,7 +53,7 @@ typedef struct {
     int serial_number;
     int type;
     int num_pills;
-    Pill pills[100];
+    Pill* pills;
     char production_date[50];
     char expire_date[50];
 } PlasticContainer;
@@ -78,6 +84,50 @@ typedef struct {
     int num_inspectors;          /* number of inspectors to be transferred */
     int num_packagers;           /* number of packagers to be transferred */
 } EmployeeTransferMessage;
+
+typedef struct {
+    LiquidMedicine medicine;
+    float y;
+    float x;
+    bool draw_this;
+} LiquidMedicineGUI;
+
+typedef struct {
+    PlasticContainer plastic_container;
+    float x;
+    float y;
+    bool draw_this;
+} PlasticContainerGUI;
+
+typedef struct {
+    int worker_index;
+    int production_line_number;
+} InspectorGUI;
+
+typedef struct {
+    int worker_index;
+    int production_line_number;
+} PackagerGUI;
+
+typedef struct {
+    long operation_type;
+    int production_line_number;
+    int worker_index;
+    int medicine_type;
+    union
+    {
+        PlasticContainer plastic_container;
+        LiquidMedicine liquid_medicine;
+    } medicine;
+    
+} DrawerMessage;
+
+typedef struct {
+    long type;
+    int production_line_number;
+    int num_inspectors;
+    int num_packagers;
+} InitialMessage;
 
 typedef struct {
     int production_num;

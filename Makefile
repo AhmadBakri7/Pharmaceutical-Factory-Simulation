@@ -2,12 +2,13 @@
 CC = gcc
 CFLAGS = -Wall
 LIBS = -lpthread
+LDFLAGS_DRAWER = -lm -lglut -lGLU -lGL
 
 # Object file directory
 OBJ_DIR = obj
 
 # Source files for each process
-PROCESS_SOURCES = main.c liquid_production_line.c pill_production_line.c
+PROCESS_SOURCES = main.c liquid_production_line.c pill_production_line.c drawer.c
 
 # Common object file for shared functions
 FUNCTIONS_OBJECT = $(OBJ_DIR)/functions.o
@@ -27,12 +28,12 @@ $(FUNCTIONS_OBJECT): functions.c | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Rule to link each executable (except drawer) with common LDFLAGS
-$(MATH_USERS): %: $(OBJ_DIR)/%.o $(FUNCTIONS_OBJECT)
-	$(CC) $^ -o $@ $(MATH_LIB)
-
-# Rule to link each executable (except drawer) with common LDFLAGS
-$(EXECUTABLES): %: $(OBJ_DIR)/%.o $(FUNCTIONS_OBJECT)
+$(filter-out drawer,$(EXECUTABLES)): %: $(OBJ_DIR)/%.o $(FUNCTIONS_OBJECT)
 	$(CC) $^ -o $@ $(LIBS)
+
+# Rule to link drawer executable with specific LDFLAGS
+drawer: $(OBJ_DIR)/drawer.o $(FUNCTIONS_OBJECT)
+	$(CC) $^ -o $@ $(LDFLAGS_DRAWER)
 
 
 # Create object file directory if it doesn't exist

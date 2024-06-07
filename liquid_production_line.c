@@ -13,6 +13,8 @@ pthread_cond_t empty_created_medicine_queue_cv = PTHREAD_COND_INITIALIZER;
 pthread_cond_t empty_non_defected_queue_cv = PTHREAD_COND_INITIALIZER;
 
 int num_medicine_types;
+int production_line_number;
+
 LiquidSpecs specs[200];
 
 Queue created_medicine_queue;
@@ -37,8 +39,7 @@ int liquid_level_defect_rate, color_defect_rate, sealed_defect_rate,
 
 float speed_threshold;
 
-int feedback_queue_id;
-int emp_transfer_queue_id;
+int feedback_queue_id, emp_transfer_queue_id, drawer_queue_id;
 int speed_sem_id, speed_shmem_id;
 
 
@@ -75,6 +76,18 @@ void* inspection(void* data) {
 
         pthread_mutex_unlock(&created_medicine_queue_mutex);
 
+        DrawerMessage drawer_msg;
+        drawer_msg.production_line_number = production_line_number;
+        drawer_msg.operation_type = INSPECTION_START;
+        drawer_msg.medicine_type = LIQUID;
+        drawer_msg.worker_index = my_number;
+        memcpy(&drawer_msg.medicine.liquid_medicine, &medicine, sizeof(medicine));
+
+        if ( msgsnd(drawer_queue_id, &drawer_msg, sizeof(drawer_msg), 0) == -1 ) {
+            perror("Child: msgsend Production");
+            pthread_exit( (void*) -1 );
+        }
+
         /* year/month/day */
         int production_year = atoi(strtok(medicine.production_date, "-"));
         int production_month = atoi(strtok('\0', "-"));
@@ -102,6 +115,8 @@ void* inspection(void* data) {
             printf("An (INSPECTOR): %d, put a medicine [%d] in Trash\n", my_number, medicine.serial_number);
             fflush(stdout);
 
+            drawer_msg.operation_type = INSPECTION_FAILED;
+
             // send to main.c (parent process) that a medicine is defected, using a message queue.
             FeedBackMessage msg;
             msg.message_type = DEFECTED_LIQUID_MEDICINE;
@@ -117,9 +132,19 @@ void* inspection(void* data) {
             printf("An (INSPECTOR): %d, put a medicine [%d] in Non Defected\n", my_number, medicine.serial_number);
             fflush(stdout);
 
+            drawer_msg.operation_type = INSPECTION_SUCCESSFUL;
+
             pthread_cond_signal(&empty_non_defected_queue_cv);
 
             pthread_mutex_unlock(&non_defected_medicine_queue_mutex);
+        }
+        drawer_msg.production_line_number = production_line_number;
+        drawer_msg.worker_index = my_number;
+        memcpy(&drawer_msg.medicine.liquid_medicine, &medicine, sizeof(medicine));
+
+        if ( msgsnd(drawer_queue_id, &drawer_msg, sizeof(drawer_msg), 0) == -1 ) {
+            perror("Child: msgsend Production");
+            pthread_exit( (void*) -1 );
         }
         pthread_testcancel();
     }
@@ -146,9 +171,22 @@ void* packaging(void* data) {
 
         pthread_cleanup_pop(0);
 
+        DrawerMessage drawer_msg;
+        drawer_msg.production_line_number = production_line_number;
+        drawer_msg.operation_type = PACKAGING_START;
+        drawer_msg.medicine_type = LIQUID;
+        drawer_msg.worker_index = my_number;
+        memcpy(&drawer_msg.medicine.liquid_medicine, &medicine, sizeof(medicine));
+
         if (dequeue(&non_defected_medicine_queue, &medicine) != -1) {
 
             pthread_mutex_unlock(&non_defected_medicine_queue_mutex);
+            
+            // start packaging
+            if ( msgsnd(drawer_queue_id, &drawer_msg, sizeof(drawer_msg), 0) == -1 ) {
+                perror("Child: msgsend Production");
+                pthread_exit( (void*) -1 );
+            }
 
             sleep( select_from_range(min_time_for_packaging, max_time_for_packaging) );
 
@@ -157,6 +195,15 @@ void* packaging(void* data) {
 
             printf("A (PACKAGER): %d, put medicine [%d] in Packaged Queue\n", my_number, medicine.serial_number);
             fflush(stdout);
+
+            // finish packaging
+            drawer_msg.operation_type = PACKAGING_END;
+            memcpy(&drawer_msg.medicine.liquid_medicine, &medicine, sizeof(medicine));
+
+            if ( msgsnd(drawer_queue_id, &drawer_msg, sizeof(drawer_msg), 0) == -1 ) {
+                perror("Child: msgsend Production");
+                pthread_exit( (void*) -1 );
+            }
 
             FeedBackMessage msg;
             msg.message_type = PRODUCED_LIQUID_MEDICINE;
@@ -205,7 +252,7 @@ void initialize_specs() {
     fflush(stdout);
 }
 
-LiquidMedicine produce_medicine(int production_line_number) {
+LiquidMedicine produce_medicine() {
     LiquidMedicine created_medicine;
     bool flag = false;
 
@@ -478,11 +525,12 @@ int main(int argc, char** argv) {
     min_time_for_packaging = atoi(strtok(argv[13], "-"));
     max_time_for_packaging = atoi(strtok('\0', "-"));
 
-    int production_line_number = atoi(argv[14]);
+    production_line_number = atoi(argv[14]);
     int number_of_production_lines = atoi(argv[15]);
     speed_threshold = atof(argv[16]);
 
     key_t feedback_queue_key = ftok(".", 'Q');
+    key_t drawer_queue_key = ftok(".", 'D');
     key_t emp_transfer_queue_key = ftok(".", 'E');
     key_t speed_shmem_key = ftok(".", 'M');
     key_t speed_sem_key = ftok(".", 'S');
@@ -493,6 +541,11 @@ int main(int argc, char** argv) {
     }
 
     if ( (emp_transfer_queue_id = msgget(emp_transfer_queue_key, IPC_CREAT | 0770)) == -1 ) {
+        perror("Queue create");
+        exit(1);
+    }
+    
+    if ( (drawer_queue_id = msgget(drawer_queue_key, IPC_CREAT | 0770)) == -1 ) {
         perror("Queue create");
         exit(1);
     }
@@ -554,9 +607,36 @@ int main(int argc, char** argv) {
     printf("(LINE: %d)Inspectors: %d, Packagers: %d\n", production_line_number, num_inspectors, num_packagers);
     fflush(stdout);
 
+    InitialMessage init_msg;
+    init_msg.type = INITIAL;
+    init_msg.production_line_number = production_line_number;
+    init_msg.num_inspectors = num_inspectors;
+    init_msg.num_packagers = num_packagers;
+
+    if ( msgsnd(drawer_queue_id, &init_msg, sizeof(init_msg), 0) == -1 ) {
+        perror("Child: msgsend Production Init");
+        pthread_exit( (void*) -1 );
+    }
+
+    // pause();
+
     // producing medicine
     while(1) {
-        LiquidMedicine created_medicine = produce_medicine(production_line_number);
+        LiquidMedicine created_medicine = produce_medicine();
+
+        DrawerMessage drawer_msg;
+        drawer_msg.operation_type = PRODUCTION;
+        drawer_msg.production_line_number = production_line_number;
+        drawer_msg.medicine_type = LIQUID;
+        drawer_msg.worker_index = 0;
+        memcpy(&drawer_msg.medicine.liquid_medicine, &created_medicine, sizeof(created_medicine));
+
+        if ( msgsnd(drawer_queue_id, &drawer_msg, sizeof(DrawerMessage), 0) == -1 ) {
+            perror("Child: msgsend Production Mahmoud");
+            pthread_exit( (void*) -1 );
+        }
+
+        // pause();
 
         pthread_mutex_lock(&created_medicine_queue_mutex);
 
@@ -564,6 +644,8 @@ int main(int argc, char** argv) {
         printf("%d\n", getSize(&created_medicine_queue));
         printf("---------------------------------\n");
         fflush(stdout);
+
+        sleep(1);
 
         pthread_cond_signal(&empty_created_medicine_queue_cv);
 
